@@ -38,6 +38,8 @@ export default function Motoristas() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [historicoOpen, setHistoricoOpen] = useState(false);
+  const [novoOpen, setNovoOpen] = useState(false);
+  const [novoForm, setNovoForm] = useState({ nome: "", matricula: "", cpf: "", cnh: "D", cnhValidade: "", telefone: "", status: "ATIVO" });
   const [motoristaSelecionado, setMotoristaSelecionado] = useState<{ id: string; nome: string; matricula: string } | null>(null);
   const [detalhesOpen, setDetalhesOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -65,6 +67,24 @@ export default function Motoristas() {
   const handleView = (m: typeof initialMotoristas[0]) => { setSelected(m); setDetalhesOpen(true); };
   const handleEdit = (m: typeof initialMotoristas[0]) => { setSelected(m); setEditForm({ nome: m.nome, telefone: m.telefone, status: m.status }); setEditOpen(true); };
   const handleDelete = (m: typeof initialMotoristas[0]) => { setSelected(m); setExcluirOpen(true); };
+
+  const confirmNovo = () => {
+    const novo = {
+      id: Date.now(),
+      nome: novoForm.nome,
+      matricula: novoForm.matricula,
+      cpf: novoForm.cpf || "***.***.***-00",
+      cnh: novoForm.cnh,
+      cnhValidade: novoForm.cnhValidade,
+      telefone: novoForm.telefone,
+      status: novoForm.status,
+      avarias: 0,
+    };
+    setMotoristas((prev) => [novo, ...prev]);
+    toast({ title: "Motorista cadastrado!", description: novoForm.nome });
+    setNovoOpen(false);
+    setNovoForm({ nome: "", matricula: "", cpf: "", cnh: "D", cnhValidade: "", telefone: "", status: "ATIVO" });
+  };
 
   const confirmEdit = () => {
     if (!selected) return;
@@ -111,6 +131,29 @@ export default function Motoristas() {
         </>
       )}
 
+      <Dialog open={novoOpen} onOpenChange={setNovoOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Novo Motorista</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2"><Label>Nome *</Label><Input placeholder="Nome completo" value={novoForm.nome} onChange={(e) => setNovoForm((p) => ({ ...p, nome: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Matrícula</Label><Input placeholder="Ex: 03486" value={novoForm.matricula} onChange={(e) => setNovoForm((p) => ({ ...p, matricula: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>CPF</Label><Input placeholder="000.000.000-00" value={novoForm.cpf} onChange={(e) => setNovoForm((p) => ({ ...p, cpf: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Categoria CNH</Label><Select value={novoForm.cnh} onValueChange={(v) => setNovoForm((p) => ({ ...p, cnh: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="B">B</SelectItem><SelectItem value="D">D</SelectItem><SelectItem value="E">E</SelectItem><SelectItem value="A/D">A/D</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Validade CNH</Label><Input placeholder="DD/MM/AAAA" value={novoForm.cnhValidade} onChange={(e) => setNovoForm((p) => ({ ...p, cnhValidade: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-2"><Label>Telefone</Label><Input placeholder="(81) 99999-0000" value={novoForm.telefone} onChange={(e) => setNovoForm((p) => ({ ...p, telefone: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Status</Label><Select value={novoForm.status} onValueChange={(v) => setNovoForm((p) => ({ ...p, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ATIVO">Ativo</SelectItem><SelectItem value="FERIAS">Férias</SelectItem><SelectItem value="AFASTADO">Afastado</SelectItem></SelectContent></Select></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNovoOpen(false)}>Cancelar</Button>
+            <Button onClick={confirmNovo} disabled={!novoForm.nome}>Cadastrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Editar Motorista</DialogTitle></DialogHeader>
@@ -133,7 +176,7 @@ export default function Motoristas() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="mr-2 h-4 w-4" />Importar</Button>
           <Button variant="outline" onClick={handleRelatorio}><FileText className="mr-2 h-4 w-4" />Relatório</Button>
-          <Button><Plus className="mr-2 h-4 w-4" />Novo Motorista</Button>
+          <Button onClick={() => setNovoOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Motorista</Button>
         </div>
       </div>
 

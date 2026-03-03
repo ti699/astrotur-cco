@@ -7,36 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link } from "react-router-dom";
-import { useDashboard, useOcorrencias } from "@/services/useApi";
-
-// Placeholder – substituir por endpoint dedicado quando disponível
-const _allOccurrences_UNUSED = [
-  { id: 1, date: "2026-02-10", time: "14:30", type: "QUEBRA", vehicle: "121904", client: "JEEP", status: "em_andamento", description: "Problema no sistema de freio" },
-  { id: 2, date: "2026-02-10", time: "13:15", type: "SOCORRO", vehicle: "102104", client: "HDH", status: "concluido", description: "Pneu furado - substituido" },
-  { id: 3, date: "2026-02-09", time: "11:45", type: "ATRASO", vehicle: "101318", client: "VILA GALE", status: "concluido", description: "Atraso de 15 minutos" },
-  { id: 4, date: "2026-02-09", time: "09:20", type: "INFORMACAO", vehicle: "2408", client: "CBA", status: "concluido", description: "Programacao alterada" },
-  { id: 5, date: "2026-02-08", time: "07:00", type: "SOCORRO", vehicle: "2536", client: "MONTE RODOVIAS", status: "pendente", description: "Motor falhando" },
-];
-
-// ---
-
-const weeklyData = [
-  { day: "Seg", ocorrencias: 12, atrasos: 3 },
-  { day: "Ter", ocorrencias: 8, atrasos: 2 },
-  { day: "Qua", ocorrencias: 15, atrasos: 5 },
-  { day: "Qui", ocorrencias: 10, atrasos: 1 },
-  { day: "Sex", ocorrencias: 6, atrasos: 2 },
-  { day: "Sab", ocorrencias: 4, atrasos: 0 },
-  { day: "Dom", ocorrencias: 3, atrasos: 1 },
-];
-
-const fleetStatus = [
-  { status: "Em operacao", count: 38, cls: "bg-green-500" },
-  { status: "Na garagem", count: 8, cls: "bg-blue-500" },
-  { status: "Em manutencao", count: 5, cls: "bg-amber-500" },
-  { status: "Em abastecimento", count: 3, cls: "bg-purple-500" },
-  { status: "Em socorro", count: 4, cls: "bg-red-500" },
-];
+import { useDashboard, useOcorrencias, useVeiculos } from "@/services/useApi";
 
 const STATUS_MAP: Record<string, { cls: string; label: string }> = {
   em_andamento: { cls: "bg-amber-100 text-amber-800", label: "Em Andamento" },
@@ -64,8 +35,52 @@ export default function Dashboard() {
 
   const { data: dashboardData, isLoading: loadingDash } = useDashboard();
   const { data: ocorrencias = [], isLoading: loadingOc } = useOcorrencias();
+  const { data: veiculos = [] } = useVeiculos();
 
   const stats = dashboardData?.stats;
+
+  // ── Gráfico semanal a partir dos dados reais ─────────────────────────────
+  const weeklyData = useMemo(() => {
+    const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
+    // Últimos 7 dias (sem incluir hoje no futuro)
+    const hoje = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(hoje);
+      d.setDate(hoje.getDate() - (6 - i));
+      const dateStr = d.toISOString().split("T")[0];
+      const dayOcs = ocorrencias.filter((o) => {
+        const oc = (o.data_ocorrencia || o.data_quebra || "").split("T")[0];
+        return oc === dateStr;
+      });
+      return {
+        day: DAYS[d.getDay()],
+        ocorrencias: dayOcs.length,
+        atrasos: dayOcs.filter((o) => o.houve_atraso === "sim").length,
+      };
+    });
+  }, [ocorrencias]);
+
+  // ── Status da frota a partir dos dados reais ─────────────────────────────
+  const fleetStatus = useMemo(() => {
+    const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
+      EM_OPERACAO: { label: "Em operação", cls: "bg-green-500" },
+      NA_GARAGEM:  { label: "Na garagem",  cls: "bg-blue-500" },
+      EM_MANUTENCAO: { label: "Em manutenção", cls: "bg-amber-500" },
+      EM_ABASTECIMENTO: { label: "Em abastecimento", cls: "bg-purple-500" },
+      EM_SOCORRO: { label: "Em socorro",  cls: "bg-red-500" },
+    };
+    const counts: Record<string, number> = {};
+    for (const v of veiculos) {
+      const s = (v.status || "NA_GARAGEM").toUpperCase();
+      counts[s] = (counts[s] || 0) + 1;
+    }
+    // Montar na ordem desejada, incluindo categorias sem veículos (0)
+    return Object.entries(STATUS_LABELS).map(([key, meta]) => ({
+      status: meta.label,
+      count: counts[key] || 0,
+      cls: meta.cls,
+    }));
+  }, [veiculos]);
 
   // Filtra e limita as ocorrências recentes
   const filtered = useMemo(() => {

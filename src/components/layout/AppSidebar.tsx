@@ -1,5 +1,6 @@
-﻿import { useState } from "react";
+﻿import { useState, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useOcorrencias } from "@/services/useApi";
 import {
   LayoutDashboard, DoorOpen, Users, Settings, ChevronLeft, ChevronRight,
   Truck, Building2, UserCog, Wrench, Fuel, BarChart3, Menu, X, ShieldAlert,
@@ -45,7 +46,7 @@ const allSections: NavSection[] = [
     label: "Gestao",
     roles: ["administrador", "editor"],
     items: [
-      { title: "Ocorrencias", href: "/ocorrencias", icon: AlertTriangle, badge: 3 },
+      { title: "Ocorrencias", href: "/ocorrencias", icon: AlertTriangle },
       { title: "Avarias", href: "/avarias", icon: ShieldAlert },
       { title: "Clientes", href: "/cadastros/clientes", icon: Building2 },
       { title: "Relatorios", href: "/relatorios", icon: BarChart3 },
@@ -74,6 +75,12 @@ export function AppSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const { user } = useAuth();
+  const { data: ocorrencias = [] } = useOcorrencias();
+
+  const pendentesCount = useMemo(
+    () => ocorrencias.filter((o) => (o.status || "").toLowerCase() === "pendente").length,
+    [ocorrencias]
+  );
 
   const role = user?.role || "portaria";
 
@@ -102,9 +109,9 @@ export function AppSidebar() {
       {!collapsed && (
         <>
           <span className="flex-1 truncate">{item.title}</span>
-          {item.badge != null && (
-            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-bold text-destructive-foreground">
-              {item.badge}
+          {item.href === "/ocorrencias" && pendentesCount > 0 && (
+            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white text-red-700 px-1.5 text-xs font-bold">
+              {pendentesCount}
             </span>
           )}
         </>
@@ -114,13 +121,13 @@ export function AppSidebar() {
 
   const sidebarContent = (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border flex-shrink-0">
+      <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border flex-shrink-0 bg-white">
         {!collapsed ? (
           <div className="flex items-center gap-2 min-w-0">
             <img src={logoAstrotur} alt="Grupo Astrotur" className="h-10 w-auto object-contain flex-shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-sm font-bold text-sidebar-foreground">CCO</h1>
-              <p className="text-xs text-sidebar-muted">Gestao de Frota</p>
+              <h1 className="text-sm font-bold text-gray-900">CCO</h1>
+              <p className="text-xs text-gray-500">Gestao de Frota</p>
             </div>
           </div>
         ) : (
