@@ -1,0 +1,125 @@
+.vrp-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vrp-modal {
+  background: #fff;
+  border-radius: 8px;
+  width: 500px;
+  max-width: 98vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 24px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.vrp-close-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: #fff;
+  border: 2px solid #EF4444;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  cursor: pointer;
+}
+.vrp-close-btn:hover {
+  background: #EF4444;
+}
+.vrp-close-btn:hover svg {
+  color: #fff;
+  stroke: #fff;
+}
+.vrp-header {
+  margin-bottom: 4px;
+}
+.vrp-title {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #222;
+}
+.vrp-datetime {
+  font-size: 0.98rem;
+  color: #6B7280;
+  margin-top: 2px;
+}
+.vrp-separator {
+  border-bottom: 1px solid #E5E7EB;
+  margin: 8px 0 12px 0;
+}
+.vrp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 18px;
+}
+.vrp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vrp-label {
+  color: #9CA3AF;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.vrp-value {
+  color: #222;
+  font-size: 14px;
+  font-weight: bold;
+}
+.vrp-tag {
+  display: inline-block;
+  padding: 2px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.vrp-half {
+  grid-column: span 1;
+}
+.vrp-full {
+  grid-column: span 2;
+}
+.vrp-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.vrp-btn-fechar {
+  background: #fff;
+  border: 1.5px solid #D1D5DB;
+  color: #222;
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.vrp-btn-fechar:hover {
+  background: #F3F4F6;
+}
+@media (max-width: 600px) {
+  .vrp-modal {
+    width: 98vw;
+    padding: 10px;
+  }
+  .vrp-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}

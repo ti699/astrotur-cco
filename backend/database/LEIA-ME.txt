@@ -1,0 +1,41 @@
+
+═══════════════════════════════════════════════════════════════
+  ⚠️  ATENÇÃO: ARQUIVO CORRETO PARA O SUPABASE
+═══════════════════════════════════════════════════════════════
+
+┌────────────────────────────────────────────────────────────┐
+│                                                            │
+│  ❌ NÃO USE ESTE ARQUIVO NO SUPABASE:                     │
+│     backend/database/schema.sql                            │
+│                                                            │
+│  ✅ USE ESTE ARQUIVO:                                      │
+│     backend/database/schema-supabase.sql                   │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════
+  📝 POR QUÊ?
+═══════════════════════════════════════════════════════════════
+
+O arquivo schema.sql original contém:
+  ❌ CREATE DATABASE sistema_cco;
+  ❌ \c sistema_cco;
+
+Esses comandos são do psql (cliente PostgreSQL) e NÃO funcionam
+no Supabase SQL Editor.
+
+O arquivo schema-supabase.sql foi criado especificamente para
+o Supabase, removendo esses comandos incompatíveis.
+
+═══════════════════════════════════════════════════════════════
+  🎯 COMO USAR
+═══════════════════════════════════════════════════════════════
+
+1. Abra: backend/database/schema-supabase.sql
+2. Copie TUDO (Ctrl+A, Ctrl+C)
+3. No Supabase SQL Editor: Cole e clique Run
+4. Aguarde: "✅ Schema criado com sucesso!"
+
+═══════════════════════════════════════════════════════════════
+
+Para mais detalhes, veja: SOLUCAO_ERRO_SQL.md
