@@ -57,6 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+// Credenciais de demonstração — funcionam sem backend
+const DEMO_USERS: Record<string, { nome: string; role: UserRole; cargo: string; password: string }> = {
+  "admin@sistemacco.com": { password: "admin123", nome: "Administrador", role: "administrador", cargo: "Gestor" },
+  "monitor@sistemacco.com": { password: "monitor123", nome: "Monitor CCO", role: "editor", cargo: "Monitor" },
+  "portaria@sistemacco.com": { password: "portaria123", nome: "Portaria", role: "portaria", cargo: "Porteiro" },
+};
+
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
@@ -74,6 +81,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       localStorage.setItem(TOKEN_KEY, token);
       setUser(authUser);
+    } catch (apiError) {
+      // Backend indisponível → testa credenciais de demonstração
+      const demo = DEMO_USERS[email.toLowerCase()];
+      if (demo && demo.password === password) {
+        const authUser: AuthUser = {
+          id: "demo-" + email,
+          nome: demo.nome,
+          email,
+          role: demo.role,
+          cargo: demo.cargo,
+        };
+        localStorage.setItem(TOKEN_KEY, "demo-token");
+        setUser(authUser);
+      } else {
+        throw new Error("Credenciais inválidas. Use admin@sistemacco.com / admin123");
+      }
     } finally {
       setIsLoading(false);
     }

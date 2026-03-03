@@ -103,7 +103,17 @@ export default function Login() {
           </form>
 
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Credencial padrão: <strong>admin@sistemacco.com</strong> / <strong>admin123</strong>
+            Acesso demo:{" "}
+            <button
+              type="button"
+              className="underline font-medium text-primary hover:opacity-80"
+              onClick={() => { setEmail("admin@sistemacco.com"); setPassword("admin123"); }}
+            >
+              Preencher automaticamente
+            </button>
+          </p>
+          <p className="mt-1 text-center text-xs text-muted-foreground/60">
+            admin@sistemacco.com · admin123
           </p>
         </CardContent>
       </Card>

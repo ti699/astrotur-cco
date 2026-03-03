@@ -9,6 +9,18 @@ interface State {
   error: Error | null;
 }
 
+// Erros causados por extensões de navegador (ex.: Google Translate) que
+// manipulam o DOM enquanto o React tenta atualizá-lo. Não são falhas do app.
+function isDomExtensionError(error: Error): boolean {
+  const msg = error?.message ?? "";
+  return (
+    msg.includes("removeChild") ||
+    msg.includes("insertBefore") ||
+    msg.includes("The node to be removed") ||
+    msg.includes("not a child of this node")
+  );
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -16,10 +28,19 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
+    // Ignora erros de DOM causados por extensões (Google Translate, etc.)
+    if (isDomExtensionError(error)) {
+      return { hasError: false, error: null };
+    }
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    if (isDomExtensionError(error)) {
+      // Auto-recupera sem mostrar tela de erro
+      this.setState({ hasError: false, error: null });
+      return;
+    }
     console.error("ErrorBoundary caught:", error, info);
   }
 
