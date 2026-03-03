@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { TIPOS_SOCORRO, type TipoSocorroNome } from "@/types";
+import { useCreateOcorrencia, useClientes, useVeiculos } from "@/services/useApi";
 
 const tiposOcorrencia = [
   "Atraso",
@@ -31,18 +32,38 @@ const tiposOcorrencia = [
   "Socorro",
 ];
 
-const clientes = ["JEEP", "HDH", "TECON", "CBA", "VILA GALÉ", "MONTE RODOVIAS", "MARELLI", "CIMENTO FORTE"];
-
 const plantonistas = ["VALDOMIRO", "MACARIO", "IRANILDO", "ANDERSON"];
 
 export default function NovaOcorrencia() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { registrarLog } = useAuditLog();
+  const createOcorrencia = useCreateOcorrencia();
+  const { data: clientesData = [] } = useClientes();
+  const { data: veiculosData = [] } = useVeiculos();
+
   const [houveAtraso, setHouveAtraso] = useState(false);
   const [tipoOcorrencia, setTipoOcorrencia] = useState("");
   const [tipoSocorro, setTipoSocorro] = useState<TipoSocorroNome | "">("");
   const [descricaoSocorro, setDescricaoSocorro] = useState("");
+
+  // Campos controlados do form
+  const [formData, setFormData] = useState({
+    data: new Date().toISOString().split("T")[0],
+    hora: new Date().toTimeString().slice(0, 5),
+    plantonista: "",
+    cliente: "",
+    veiculo_previsto: "",
+    veiculo_substituto: "",
+    horario_socorro: "",
+    horario_saida: "",
+    tempo_atraso: "",
+    status: "PENDENTE",
+    descricao: "",
+  });
+
+  const setField = (field: string, value: string) =>
+    setFormData((prev) => ({ ...prev, [field]: value }));
 
   // Verificar se tipo de socorro selecionado requer descrição
   const tipoSocorroConfig = TIPOS_SOCORRO.find(t => t.nome === tipoSocorro);
@@ -50,9 +71,9 @@ export default function NovaOcorrencia() {
   const alertaDiretoria = tipoSocorroConfig?.alertaDiretoria || false;
   const isAvaria = tipoSocorro === "Avaria";
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validar descrição obrigatória para "Outros"
     if (requerDescricao && !descricaoSocorro.trim()) {
       toast({
@@ -70,26 +91,45 @@ export default function NovaOcorrencia() {
         description: "A diretoria será notificada automaticamente sobre esta ocorrência.",
         variant: "destructive",
       });
-      // Registrar log de alerta crítico
       registrarLog("ocorrencia", `oc_${Date.now()}`, "ALERTA_PANE_SECA", undefined, undefined, {
         tipoSocorro,
         alertaEnviado: true,
       });
     }
 
-    // Registrar log de criação
     registrarLog("ocorrencia", `oc_${Date.now()}`, "OCORRENCIA_CRIADA", undefined, "PENDENTE", {
       tipoOcorrencia,
       tipoSocorro,
     });
 
-    toast({
-      title: "Ocorrência registrada!",
-      description: isAvaria 
-        ? "Ocorrência salva. Sugestão: Abra um workflow de DAI para esta avaria."
-        : "A ocorrência foi salva com sucesso.",
+    // Enviar para o backend
+    const payload = {
+      monitor_nome: formData.plantonista,
+      cliente_nome: formData.cliente,
+      data_ocorrencia: formData.data,
+      tipo_ocorrencia: tipoSocorro || tipoOcorrencia,
+      veiculo_placa: formData.veiculo_previsto,
+      houve_troca_veiculo: formData.veiculo_substituto ? "sim" : "nao",
+      veiculo_substituto_placa: formData.veiculo_substituto || null,
+      horario_socorro: formData.horario_socorro || null,
+      horario_saida: formData.horario_saida || null,
+      houve_atraso: houveAtraso ? "sim" : "nao",
+      tempo_atraso: houveAtraso ? formData.tempo_atraso : null,
+      descricao: formData.descricao || descricaoSocorro,
+      status: formData.status,
+    };
+
+    createOcorrencia.mutate(payload, {
+      onSuccess: () => {
+        toast({
+          title: "Ocorrência registrada!",
+          description: isAvaria
+            ? "Ocorrência salva. Sugestão: Abra um workflow de DAI para esta avaria."
+            : "A ocorrência foi salva com sucesso.",
+        });
+        navigate("/ocorrencias");
+      },
     });
-    navigate("/ocorrencias");
   };
 
   return (
@@ -119,7 +159,8 @@ export default function NovaOcorrencia() {
                   <Input
                     id="data"
                     type="date"
-                    defaultValue={new Date().toISOString().split("T")[0]}
+                    value={formData.data}
+                    onChange={(e) => setField("data", e.target.value)}
                     required
                   />
                 </div>
@@ -128,7 +169,8 @@ export default function NovaOcorrencia() {
                   <Input
                     id="hora"
                     type="time"
-                    defaultValue={new Date().toTimeString().slice(0, 5)}
+                    value={formData.hora}
+                    onChange={(e) => setField("hora", e.target.value)}
                     required
                   />
                 </div>
@@ -136,7 +178,7 @@ export default function NovaOcorrencia() {
 
               <div className="space-y-2">
                 <Label htmlFor="plantonista">Plantonista *</Label>
-                <Select required>
+                <Select value={formData.plantonista} onValueChange={(v) => setField("plantonista", v)} required>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o plantonista" />
                   </SelectTrigger>
@@ -152,16 +194,20 @@ export default function NovaOcorrencia() {
 
               <div className="space-y-2">
                 <Label htmlFor="cliente">Cliente/Contrato *</Label>
-                <Select required>
+                <Select value={formData.cliente} onValueChange={(v) => setField("cliente", v)} required>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o cliente" />
                   </SelectTrigger>
                   <SelectContent>
-                    {clientes.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
+                    {clientesData.length > 0
+                      ? clientesData.map((c) => (
+                          <SelectItem key={c.id} value={c.nome}>
+                            {c.nome}
+                          </SelectItem>
+                        ))
+                      : ["JEEP","HDH","CBA","VILA GALÉ","MONTE RODOVIAS"].map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -199,8 +245,14 @@ export default function NovaOcorrencia() {
                 <Input
                   id="veiculoPrevisto"
                   placeholder="Ex: 121904"
+                  value={formData.veiculo_previsto}
+                  onChange={(e) => setField("veiculo_previsto", e.target.value)}
                   required
+                  list="veiculos-list"
                 />
+                <datalist id="veiculos-list">
+                  {veiculosData.map((v) => <option key={v.id} value={v.placa} />)}
+                </datalist>
               </div>
 
               <div className="space-y-2">
@@ -208,6 +260,9 @@ export default function NovaOcorrencia() {
                 <Input
                   id="veiculoSubstituido"
                   placeholder="Ex: 121928 (se houve troca)"
+                  value={formData.veiculo_substituto}
+                  onChange={(e) => setField("veiculo_substituto", e.target.value)}
+                  list="veiculos-list"
                 />
               </div>
 
@@ -271,11 +326,11 @@ export default function NovaOcorrencia() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="horarioSocorro">Horário do Socorro</Label>
-                  <Input id="horarioSocorro" type="time" />
+                  <Input id="horarioSocorro" type="time" value={formData.horario_socorro} onChange={(e) => setField("horario_socorro", e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="horarioSaidaSocorro">Horário Saída Socorro</Label>
-                  <Input id="horarioSaidaSocorro" type="time" />
+                  <Input id="horarioSaidaSocorro" type="time" value={formData.horario_saida} onChange={(e) => setField("horario_saida", e.target.value)} />
                 </div>
               </div>
             </CardContent>
@@ -308,6 +363,8 @@ export default function NovaOcorrencia() {
                     id="tempoAtraso"
                     type="time"
                     placeholder="Ex: 00:30"
+                    value={formData.tempo_atraso}
+                    onChange={(e) => setField("tempo_atraso", e.target.value)}
                   />
                 </div>
               )}
@@ -322,7 +379,7 @@ export default function NovaOcorrencia() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="status">Status *</Label>
-                <Select defaultValue="PENDENTE">
+                <Select value={formData.status} onValueChange={(v) => setField("status", v)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -340,6 +397,8 @@ export default function NovaOcorrencia() {
                   id="descricao"
                   placeholder="Descreva a ocorrência em detalhes..."
                   className="min-h-[120px]"
+                  value={formData.descricao}
+                  onChange={(e) => setField("descricao", e.target.value)}
                   required
                 />
               </div>
@@ -368,9 +427,9 @@ export default function NovaOcorrencia() {
           <Button type="button" variant="outline" onClick={() => navigate(-1)}>
             Cancelar
           </Button>
-          <Button type="submit">
+          <Button type="submit" disabled={createOcorrencia.isPending}>
             <Save className="mr-2 h-4 w-4" />
-            Salvar Ocorrência
+            {createOcorrencia.isPending ? "Salvando..." : "Salvar Ocorrência"}
           </Button>
         </div>
       </form>

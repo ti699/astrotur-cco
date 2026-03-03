@@ -13,7 +13,7 @@ import logoAstrotur from "@/assets/logo-astrotur.png";
 
 export function AppHeader() {
   const [finalizarPlantaoOpen, setFinalizarPlantaoOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const pendenciasCount = 2;
 
   const notifications = [
@@ -99,7 +99,7 @@ export function AppHeader() {
             <DropdownMenuSeparator />
             <DropdownMenuItem><User className="mr-2 h-4 w-4" />Perfil</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive"><LogOut className="mr-2 h-4 w-4" />Sair</DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onClick={logout}><LogOut className="mr-2 h-4 w-4" />Sair</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

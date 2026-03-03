@@ -1,5 +1,5 @@
 ﻿import { useState, useMemo } from "react";
-import { Bus, AlertTriangle, Wrench, Fuel } from "lucide-react";
+import { Bus, AlertTriangle, Clock, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
@@ -7,14 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link } from "react-router-dom";
+import { useDashboard, useOcorrencias } from "@/services/useApi";
 
-const allOccurrences = [
+// Placeholder – substituir por endpoint dedicado quando disponível
+const _allOccurrences_UNUSED = [
   { id: 1, date: "2026-02-10", time: "14:30", type: "QUEBRA", vehicle: "121904", client: "JEEP", status: "em_andamento", description: "Problema no sistema de freio" },
   { id: 2, date: "2026-02-10", time: "13:15", type: "SOCORRO", vehicle: "102104", client: "HDH", status: "concluido", description: "Pneu furado - substituido" },
   { id: 3, date: "2026-02-09", time: "11:45", type: "ATRASO", vehicle: "101318", client: "VILA GALE", status: "concluido", description: "Atraso de 15 minutos" },
   { id: 4, date: "2026-02-09", time: "09:20", type: "INFORMACAO", vehicle: "2408", client: "CBA", status: "concluido", description: "Programacao alterada" },
   { id: 5, date: "2026-02-08", time: "07:00", type: "SOCORRO", vehicle: "2536", client: "MONTE RODOVIAS", status: "pendente", description: "Motor falhando" },
 ];
+
+// ---
 
 const weeklyData = [
   { day: "Seg", ocorrencias: 12, atrasos: 3 },
@@ -36,32 +40,50 @@ const fleetStatus = [
 
 const STATUS_MAP: Record<string, { cls: string; label: string }> = {
   em_andamento: { cls: "bg-amber-100 text-amber-800", label: "Em Andamento" },
+  EM_ANDAMENTO: { cls: "bg-amber-100 text-amber-800", label: "Em Andamento" },
   concluido: { cls: "bg-green-100 text-green-800", label: "Concluido" },
+  CONCLUIDO: { cls: "bg-green-100 text-green-800", label: "Concluido" },
   pendente: { cls: "bg-red-100 text-red-800", label: "Pendente" },
+  PENDENTE: { cls: "bg-red-100 text-red-800", label: "Pendente" },
 };
 
 const TYPE_COLORS: Record<string, string> = {
   QUEBRA: "bg-red-500",
+  Quebra: "bg-red-500",
   SOCORRO: "bg-orange-500",
+  Socorro: "bg-orange-500",
   ATRASO: "bg-amber-500",
+  Atraso: "bg-amber-500",
   INFORMACAO: "bg-primary",
+  "Informação": "bg-primary",
 };
 
 export default function Dashboard() {
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
-  const filtered = useMemo(() => allOccurrences.filter((o) => {
-    if (dataInicio && o.date < dataInicio) return false;
-    if (dataFim && o.date > dataFim) return false;
-    return true;
-  }), [dataInicio, dataFim]);
+  const { data: dashboardData, isLoading: loadingDash } = useDashboard();
+  const { data: ocorrencias = [], isLoading: loadingOc } = useOcorrencias();
+
+  const stats = dashboardData?.stats;
+
+  // Filtra e limita as ocorrências recentes
+  const filtered = useMemo(() => {
+    return ocorrencias
+      .filter((o) => {
+        const dateStr = (o.data_ocorrencia || o.data_quebra || "").split("T")[0];
+        if (dataInicio && dateStr < dataInicio) return false;
+        if (dataFim && dateStr > dataFim) return false;
+        return true;
+      })
+      .slice(0, 8);
+  }, [ocorrencias, dataInicio, dataFim]);
 
   const kpiData = [
-    { title: "Frota Total", value: "58", icon: Bus, color: "text-primary", bgColor: "bg-primary/10" },
-    { title: "Ocorrencias", value: filtered.length.toString(), icon: AlertTriangle, color: "text-amber-600", bgColor: "bg-amber-100" },
-    { title: "Em Manutencao", value: "5", icon: Wrench, color: "text-amber-600", bgColor: "bg-amber-100" },
-    { title: "Em Abastecimento", value: "3", icon: Fuel, color: "text-purple-600", bgColor: "bg-purple-100" },
+    { title: "Frota Total", value: loadingDash ? "—" : String(stats?.veiculosAtribuidos ?? "—"), icon: Bus, color: "text-primary", bgColor: "bg-primary/10" },
+    { title: "Ocorrencias (30d)", value: loadingDash ? "—" : String(stats?.totalOcorrencias ?? "—"), icon: AlertTriangle, color: "text-amber-600", bgColor: "bg-amber-100" },
+    { title: "Atrasos", value: loadingDash ? "—" : String(stats?.atrasos ?? "—"), icon: AlertTriangle, color: "text-red-600", bgColor: "bg-red-100" },
+    { title: "Tempo Medio Atend.", value: loadingDash ? "—" : (stats?.tempoMedioAtendimento ?? "—"), icon: Clock, color: "text-purple-600", bgColor: "bg-purple-100" },
   ];
 
   return (
@@ -99,7 +121,9 @@ export default function Dashboard() {
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-2xl sm:text-3xl font-bold">{kpi.value}</p>
+                  <p className="text-2xl sm:text-3xl font-bold">
+                {loadingDash ? <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /> : kpi.value}
+              </p>
                   <p className="text-xs sm:text-sm text-muted-foreground mt-1">{kpi.title}</p>
                 </div>
                 <div className={`rounded-lg p-2 ${kpi.bgColor}`}>
@@ -170,27 +194,40 @@ export default function Dashboard() {
           <Link to="/ocorrencias"><Button variant="ghost" size="sm">Ver todas</Button></Link>
         </CardHeader>
         <CardContent>
+          {loadingOc ? (
+            <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Carregando...
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">Nenhuma ocorrencia no periodo.</p>
+          ) : (
           <div className="space-y-3">
             {filtered.map((o) => {
-              const st = STATUS_MAP[o.status] || { cls: "", label: o.status };
-              const typeColor = TYPE_COLORS[o.type] || "bg-gray-500";
+              const statusKey = o.status || "";
+              const st = STATUS_MAP[statusKey] || { cls: "bg-gray-100 text-gray-800", label: statusKey };
+              const tipo = o.tipo_ocorrencia || o.tipo_quebra_nome || "";
+              const typeColor = TYPE_COLORS[tipo] || "bg-gray-500";
+              const numero = o.numero_ocorrencia || o.numero || String(o.id);
+              const hora = (o.data_ocorrencia || o.data_quebra || "").slice(11, 16) || "—";
               return (
                 <div key={o.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                  <span className="text-sm font-mono text-muted-foreground w-14 flex-shrink-0">{o.time}</span>
-                  <Badge className={`${typeColor} text-white w-fit`}>{o.type}</Badge>
+                  <span className="text-sm font-mono text-muted-foreground w-14 flex-shrink-0">{hora}</span>
+                  <Badge className={`${typeColor} text-white w-fit`}>{tipo || "—"}</Badge>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">#{o.vehicle}</span>
-                      <span className="text-muted-foreground">-</span>
-                      <span className="text-muted-foreground truncate">{o.client}</span>
+                      <span className="font-semibold">#{numero}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-muted-foreground truncate">{o.cliente_nome || "—"}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground truncate">{o.description}</p>
+                    <p className="text-sm text-muted-foreground truncate">{o.descricao}</p>
                   </div>
                   <Badge className={`${st.cls} w-fit flex-shrink-0`}>{st.label}</Badge>
                 </div>
               );
             })}
           </div>
+          )}
         </CardContent>
       </Card>
     </div>

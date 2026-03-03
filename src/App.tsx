@@ -5,7 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import { AppLayout } from "@/components/layout/AppLayout";
+import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Ocorrencias from "./pages/Ocorrencias";
 import NovaOcorrencia from "./pages/NovaOcorrencia";
@@ -24,7 +26,14 @@ import Configuracoes from "./pages/Configuracoes";
 import BancoDistancias from "./pages/BancoDistancias";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
   <BrowserRouter>
@@ -34,7 +43,11 @@ const App = () => (
           <Toaster />
           <Sonner />
           <Routes>
-            <Route element={<AppLayout />}>
+            {/* Rota pública */}
+            <Route path="/login" element={<Login />} />
+
+            {/* Rotas protegidas — exigem autenticação */}
+            <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/portaria" element={<Portaria />} />
               <Route path="/manutencao" element={<ProtectedRoute allowedRoles={["administrador", "editor"]}><Manutencao /></ProtectedRoute>} />
@@ -52,6 +65,7 @@ const App = () => (
               <Route path="/configuracoes" element={<ProtectedRoute allowedRoles={["administrador"]}><Configuracoes /></ProtectedRoute>} />
               <Route path="/banco-distancias" element={<ProtectedRoute allowedRoles={["administrador"]}><BancoDistancias /></ProtectedRoute>} />
             </Route>
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </TooltipProvider>

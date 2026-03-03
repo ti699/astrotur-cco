@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Plus, Search, Edit, Trash2, UserCog, Shield, Eye, Mail } from "lucide-react";
+import { Plus, Search, Edit, Trash2, UserCog, Shield, Eye, Mail, Loader2 } from "lucide-react";
+import { useUsuarios, useCreateUsuario, useUpdateUsuario, type Usuario } from "@/services/useApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,23 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 
-interface Usuario {
-  id: number;
-  nome: string;
-  email: string;
-  cargo: string;
-  perfil: "administrador" | "editor" | "portaria";
-  ativo: boolean;
-}
-
-const mockUsuarios: Usuario[] = [
-  { id: 1, nome: "Administrador", email: "admin@sistemacco.com", cargo: "Administrador", perfil: "administrador", ativo: true },
-  { id: 2, nome: "Anderson Silva", email: "anderson@sistemacco.com", cargo: "Supervisor", perfil: "editor", ativo: true },
-  { id: 3, nome: "Iranildo Costa", email: "iranildo@sistemacco.com", cargo: "Plantonista", perfil: "portaria", ativo: true },
-  { id: 4, nome: "Valdomiro Santos", email: "valdomiro@sistemacco.com", cargo: "Supervisor", perfil: "editor", ativo: true },
-  { id: 5, nome: "Macário Lima", email: "macario@sistemacco.com", cargo: "Porteiro", perfil: "portaria", ativo: true },
-];
-
 const perfilLabels: Record<string, string> = { administrador: "Administrador", editor: "Editor", portaria: "Portaria" };
 const perfilColors: Record<string, string> = { administrador: "bg-purple-100 text-purple-800", editor: "bg-blue-100 text-blue-800", portaria: "bg-green-100 text-green-800" };
 const perfilDescriptions: Record<string, string> = {
@@ -38,37 +22,41 @@ const perfilDescriptions: Record<string, string> = {
 
 export default function Usuarios() {
   const { toast } = useToast();
-  const [usuarios, setUsuarios] = useState<Usuario[]>(mockUsuarios);
+  const { data: usuariosData, isLoading } = useUsuarios();
+  const createUsuario = useCreateUsuario();
+  const updateUsuario = useUpdateUsuario();
+  const usuarios: Usuario[] = usuariosData ?? [];
   const [searchTerm, setSearchTerm] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUsuario, setEditingUsuario] = useState<Usuario | null>(null);
-  const [formData, setFormData] = useState({ nome: "", email: "", cargo: "", perfil: "portaria" as Usuario["perfil"], senha: "", ativo: true });
+  const [formData, setFormData] = useState({ nome: "", email: "", cargo: "", perfil: "portaria" as string, senha: "", ativo: true });
 
   const filteredUsuarios = usuarios.filter((u) =>
-    u.nome.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (u.nome ?? "").toLowerCase().includes(searchTerm.toLowerCase()) || (u.email ?? "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingUsuario) {
-      setUsuarios((prev) => prev.map((u) => u.id === editingUsuario.id ? { ...u, ...formData } : u));
-      toast({ title: "Usuário atualizado!" });
+      updateUsuario.mutate({ id: editingUsuario.id, nome: formData.nome, email: formData.email, cargo: formData.cargo, perfil: formData.perfil, ativo: formData.ativo }, {
+        onSuccess: () => { toast({ title: "Usuário atualizado!" }); setModalOpen(false); setEditingUsuario(null); setFormData({ nome: "", email: "", cargo: "", perfil: "portaria", senha: "", ativo: true }); },
+        onError: () => toast({ title: "Erro ao atualizar", variant: "destructive" }),
+      });
     } else {
-      setUsuarios((prev) => [...prev, { id: Date.now(), ...formData }]);
-      toast({ title: "Usuário cadastrado!" });
+      createUsuario.mutate({ nome: formData.nome, email: formData.email, cargo: formData.cargo, perfil: formData.perfil, senha: formData.senha }, {
+        onSuccess: () => { toast({ title: "Usuário cadastrado!" }); setModalOpen(false); setFormData({ nome: "", email: "", cargo: "", perfil: "portaria", senha: "", ativo: true }); },
+        onError: () => toast({ title: "Erro ao cadastrar", variant: "destructive" }),
+      });
     }
-    setModalOpen(false);
-    setEditingUsuario(null);
-    setFormData({ nome: "", email: "", cargo: "", perfil: "portaria", senha: "", ativo: true });
   };
 
   const handleEdit = (u: Usuario) => {
     setEditingUsuario(u);
-    setFormData({ nome: u.nome, email: u.email, cargo: u.cargo, perfil: u.perfil, senha: "", ativo: u.ativo });
+    setFormData({ nome: u.nome ?? "", email: u.email ?? "", cargo: u.cargo ?? "", perfil: u.perfil ?? "portaria", senha: "", ativo: u.ativo ?? true });
     setModalOpen(true);
   };
 
-  const handleDelete = (id: number) => { setUsuarios((prev) => prev.filter((u) => u.id !== id)); toast({ title: "Usuário excluído" }); };
+  const handleDelete = (_id: number) => { toast({ title: "Use o painel do banco para remover usuários" }); };
   const openNewModal = () => { setEditingUsuario(null); setFormData({ nome: "", email: "", cargo: "", perfil: "portaria", senha: "", ativo: true }); setModalOpen(true); };
 
   return (
@@ -101,7 +89,9 @@ export default function Usuarios() {
         <Table>
           <TableHeader><TableRow className="data-table-header"><TableHead>Nome</TableHead><TableHead>E-mail</TableHead><TableHead>Cargo</TableHead><TableHead>Perfil</TableHead><TableHead>Status</TableHead><TableHead className="w-[100px]">Ações</TableHead></TableRow></TableHeader>
           <TableBody>
-            {filteredUsuarios.map((u) => (
+            {isLoading ? (
+              <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+            ) : filteredUsuarios.map((u) => (
               <TableRow key={u.id} className="data-table-row">
                 <TableCell className="font-semibold">{u.nome}</TableCell>
                 <TableCell><div className="flex items-center gap-2"><Mail className="h-3 w-3 text-muted-foreground" />{u.email}</div></TableCell>
@@ -129,7 +119,7 @@ export default function Usuarios() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Cargo</Label><Input value={formData.cargo} onChange={(e) => setFormData({ ...formData, cargo: e.target.value })} /></div>
               <div className="space-y-2"><Label>Perfil de Acesso *</Label>
-                <Select value={formData.perfil} onValueChange={(v: Usuario["perfil"]) => setFormData({ ...formData, perfil: v })}>
+                <Select value={formData.perfil} onValueChange={(v) => setFormData({ ...formData, perfil: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="administrador">Administrador - Acesso total</SelectItem>
@@ -143,7 +133,7 @@ export default function Usuarios() {
             <div className="flex items-center justify-between"><Label>Ativo</Label><Switch checked={formData.ativo} onCheckedChange={(c) => setFormData({ ...formData, ativo: c })} /></div>
             <div className="flex justify-end gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-              <Button type="submit">{editingUsuario ? "Salvar" : "Cadastrar"}</Button>
+              <Button type="submit" disabled={createUsuario.isPending || updateUsuario.isPending}>{editingUsuario ? "Salvar" : "Cadastrar"}</Button>
             </div>
           </form>
         </DialogContent>

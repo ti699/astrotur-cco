@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
-  Plus, Search, Edit, Trash2, Eye, Phone, User as UserIcon, Building2,
+  Plus, Search, Edit, Trash2, Eye, Phone, User as UserIcon, Building2, Loader2,
 } from "lucide-react";
+import { useClientes, useCreateCliente, useUpdateCliente, useDeleteCliente, type Cliente } from "@/services/useApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,32 +14,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
-interface Cliente {
-  id: number;
-  nomeEmpresa: string;
-  nomeResponsavel: string;
-  cpf: string;
-  telefone: string;
-  email: string;
-  slaHoras: number;
-  slaNivel: string;
-  slaRequisitos: string;
-  multaDescumprimento: number;
-  ativo: boolean;
-}
-
-const mockClientes: Cliente[] = [
-  { id: 1, nomeEmpresa: "JEEP", nomeResponsavel: "Carlos Silva", cpf: "123.456.789-00", telefone: "(81) 99999-1111", email: "carlos@jeep.com.br", slaHoras: 2, slaNivel: "ALTO", slaRequisitos: "Ar-condicionado obrigatório. Veículo com no máximo 3 anos de uso. Motorista treinado.", multaDescumprimento: 5000, ativo: true },
-  { id: 2, nomeEmpresa: "VILA GALÉ", nomeResponsavel: "Maria Santos", cpf: "234.567.890-11", telefone: "(81) 99999-2222", email: "maria@vilagale.com.br", slaHoras: 3, slaNivel: "ALTO", slaRequisitos: "Ar-condicionado obrigatório. Bancos reclináveis.", multaDescumprimento: 3000, ativo: true },
-  { id: 3, nomeEmpresa: "HDH", nomeResponsavel: "João Pereira", cpf: "345.678.901-22", telefone: "(81) 99999-3333", email: "joao@hdh.com.br", slaHoras: 2, slaNivel: "MÉDIO", slaRequisitos: "Veículo em bom estado. Pontualidade rigorosa.", multaDescumprimento: 2000, ativo: true },
-  { id: 4, nomeEmpresa: "CBA", nomeResponsavel: "Ana Costa", cpf: "456.789.012-33", telefone: "(81) 99999-4444", email: "ana@cba.com.br", slaHoras: 4, slaNivel: "MÉDIO", slaRequisitos: "Nenhum requisito especial.", multaDescumprimento: 1500, ativo: true },
-];
-
-const emptyForm = { nomeEmpresa: "", nomeResponsavel: "", cpf: "", telefone: "", email: "", slaHoras: 2, slaNivel: "MÉDIO", slaRequisitos: "", multaDescumprimento: 0 };
+const emptyForm = { nome: "", contato: "", cnpj: "", email: "", sla_horas: 2, sla_nivel: "MÉDIO", sla_requisitos: "" };
 
 export default function Clientes() {
   const { toast } = useToast();
-  const [clientes, setClientes] = useState<Cliente[]>(mockClientes);
+  const { data: clientesData, isLoading } = useClientes();
+  const createCliente = useCreateCliente();
+  const updateCliente = useUpdateCliente();
+  const deleteCliente = useDeleteCliente();
+  const clientes: Cliente[] = clientesData ?? [];
   const [searchTerm, setSearchTerm] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -46,33 +30,39 @@ export default function Clientes() {
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [formData, setFormData] = useState(emptyForm);
 
-  const filteredClientes = clientes.filter((c) =>
-    c.nomeResponsavel.toLowerCase().includes(searchTerm.toLowerCase()) || c.nomeEmpresa.toLowerCase().includes(searchTerm.toLowerCase()) || c.cpf.includes(searchTerm) || c.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredClientes = useMemo(() => clientes.filter((c) =>
+    (c.nome ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (c.contato ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (c.cnpj ?? "").includes(searchTerm) ||
+    (c.email ?? "").toLowerCase().includes(searchTerm.toLowerCase())
+  ), [clientes, searchTerm]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingCliente) {
-      setClientes((prev) => prev.map((c) => c.id === editingCliente.id ? { ...c, ...formData } : c));
-      toast({ title: "Cliente atualizado!", description: `${formData.nomeEmpresa} atualizado.` });
+      updateCliente.mutate({ id: editingCliente.id, ...formData }, {
+        onSuccess: () => { toast({ title: "Cliente atualizado!", description: `${formData.nome} atualizado.` }); setModalOpen(false); setEditingCliente(null); setFormData(emptyForm); },
+        onError: () => toast({ title: "Erro ao atualizar", variant: "destructive" }),
+      });
     } else {
-      setClientes((prev) => [...prev, { id: Date.now(), ...formData, ativo: true }]);
-      toast({ title: "Cliente cadastrado!", description: `${formData.nomeEmpresa} adicionado.` });
+      createCliente.mutate(formData, {
+        onSuccess: () => { toast({ title: "Cliente cadastrado!", description: `${formData.nome} adicionado.` }); setModalOpen(false); setFormData(emptyForm); },
+        onError: () => toast({ title: "Erro ao cadastrar", variant: "destructive" }),
+      });
     }
-    setModalOpen(false);
-    setEditingCliente(null);
-    setFormData(emptyForm);
   };
 
   const handleEdit = (c: Cliente) => {
     setEditingCliente(c);
-    setFormData({ nomeEmpresa: c.nomeEmpresa, nomeResponsavel: c.nomeResponsavel, cpf: c.cpf, telefone: c.telefone, email: c.email, slaHoras: c.slaHoras, slaNivel: c.slaNivel, slaRequisitos: c.slaRequisitos, multaDescumprimento: c.multaDescumprimento });
+    setFormData({ nome: c.nome ?? "", contato: c.contato ?? "", cnpj: c.cnpj ?? "", email: c.email ?? "", sla_horas: c.sla_horas ?? 2, sla_nivel: c.sla_nivel ?? "MÉDIO", sla_requisitos: c.sla_requisitos ?? "" });
     setModalOpen(true);
   };
 
   const handleDelete = (id: number) => {
-    setClientes((prev) => prev.filter((c) => c.id !== id));
-    toast({ title: "Cliente excluído" });
+    deleteCliente.mutate(id, {
+      onSuccess: () => toast({ title: "Cliente excluído" }),
+      onError: () => toast({ title: "Erro ao excluir", variant: "destructive" }),
+    });
   };
 
   const openNewModal = () => { setEditingCliente(null); setFormData(emptyForm); setModalOpen(true); };
@@ -87,7 +77,7 @@ export default function Clientes() {
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
         <Card><CardContent className="p-4"><p className="text-2xl font-bold">{clientes.length}</p><p className="text-sm text-muted-foreground">Total de clientes</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-2xl font-bold text-green-600">{clientes.filter((c) => c.ativo).length}</p><p className="text-sm text-muted-foreground">Ativos</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-2xl font-bold text-amber-600">{clientes.filter((c) => c.slaNivel === "ALTO").length}</p><p className="text-sm text-muted-foreground">SLA Alto</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-2xl font-bold text-amber-600">{clientes.filter((c) => c.sla_nivel === "ALTO").length}</p><p className="text-sm text-muted-foreground">SLA Alto</p></CardContent></Card>
       </div>
 
       <Card><CardContent className="p-4">
@@ -98,14 +88,15 @@ export default function Clientes() {
         <Table>
           <TableHeader><TableRow className="data-table-header"><TableHead>Empresa</TableHead><TableHead>Responsável</TableHead><TableHead>CPF</TableHead><TableHead>Contato</TableHead><TableHead>SLA</TableHead><TableHead>Multa</TableHead><TableHead>Status</TableHead><TableHead className="w-[100px]">Ações</TableHead></TableRow></TableHeader>
           <TableBody>
-            {filteredClientes.map((c) => (
+            {isLoading ? (
+              <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+            ) : filteredClientes.map((c) => (
               <TableRow key={c.id} className="data-table-row">
-                <TableCell className="font-semibold"><div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{c.nomeEmpresa}</div></TableCell>
-                <TableCell><div className="flex items-center gap-2"><UserIcon className="h-4 w-4 text-muted-foreground" />{c.nomeResponsavel}</div></TableCell>
-                <TableCell className="font-mono text-sm">{c.cpf}</TableCell>
-                <TableCell><div className="flex items-center gap-2"><Phone className="h-3 w-3 text-muted-foreground" />{c.telefone}</div></TableCell>
-                <TableCell><Badge className={c.slaNivel === "ALTO" ? "bg-red-100 text-red-800" : c.slaNivel === "MÉDIO" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"}>{c.slaNivel} ({c.slaHoras}h)</Badge></TableCell>
-                <TableCell className="font-mono text-sm">R$ {c.multaDescumprimento.toLocaleString()}</TableCell>
+                <TableCell className="font-semibold"><div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{c.nome}</div></TableCell>
+                <TableCell><div className="flex items-center gap-2"><UserIcon className="h-4 w-4 text-muted-foreground" />{c.contato}</div></TableCell>
+                <TableCell className="font-mono text-sm">{c.cnpj}</TableCell>
+                <TableCell><div className="flex items-center gap-2"><Phone className="h-3 w-3 text-muted-foreground" />{c.email}</div></TableCell>
+                <TableCell><Badge className={c.sla_nivel === "ALTO" ? "bg-red-100 text-red-800" : c.sla_nivel === "MÉDIO" ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"}>{c.sla_nivel} ({c.sla_horas}h)</Badge></TableCell>
                 <TableCell>{c.ativo ? <Badge className="bg-green-100 text-green-800">Ativo</Badge> : <Badge variant="secondary">Inativo</Badge>}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
@@ -125,29 +116,24 @@ export default function Clientes() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingCliente ? "Editar Cliente" : "Novo Cliente"}</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2"><Label>Nome da Empresa *</Label><Input value={formData.nomeEmpresa} onChange={(e) => setFormData({ ...formData, nomeEmpresa: e.target.value })} placeholder="Ex: JEEP, VILA GALÉ..." required /></div>
+            <div className="space-y-2"><Label>Nome da Empresa *</Label><Input value={formData.nome} onChange={(e) => setFormData({ ...formData, nome: e.target.value })} placeholder="Ex: JEEP, VILA GALÉ..." required /></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Nome do Responsável *</Label><Input value={formData.nomeResponsavel} onChange={(e) => setFormData({ ...formData, nomeResponsavel: e.target.value })} required /></div>
-              <div className="space-y-2"><Label>CPF *</Label><Input value={formData.cpf} onChange={(e) => setFormData({ ...formData, cpf: e.target.value })} placeholder="000.000.000-00" required /></div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Telefone</Label><Input value={formData.telefone} onChange={(e) => setFormData({ ...formData, telefone: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Contato / Responsável</Label><Input value={formData.contato} onChange={(e) => setFormData({ ...formData, contato: e.target.value })} /></div>
               <div className="space-y-2"><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></div>
             </div>
 
             <div className="border-t pt-4">
               <h3 className="font-semibold mb-3">SLA e Contrato</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2"><Label>Tempo Resposta (h)</Label><Input type="number" min={1} value={formData.slaHoras} onChange={(e) => setFormData({ ...formData, slaHoras: parseInt(e.target.value) })} /></div>
-                <div className="space-y-2"><Label>Nível SLA</Label><Select value={formData.slaNivel} onValueChange={(v) => setFormData({ ...formData, slaNivel: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALTO">Alto</SelectItem><SelectItem value="MÉDIO">Médio</SelectItem><SelectItem value="BAIXO">Baixo</SelectItem></SelectContent></Select></div>
-                <div className="space-y-2"><Label>Multa (R$)</Label><Input type="number" value={formData.multaDescumprimento} onChange={(e) => setFormData({ ...formData, multaDescumprimento: parseFloat(e.target.value) || 0 })} /></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Tempo Resposta (h)</Label><Input type="number" min={1} value={formData.sla_horas} onChange={(e) => setFormData({ ...formData, sla_horas: parseInt(e.target.value) })} /></div>
+                <div className="space-y-2"><Label>Nível SLA</Label><Select value={formData.sla_nivel} onValueChange={(v) => setFormData({ ...formData, sla_nivel: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALTO">Alto</SelectItem><SelectItem value="MÉDIO">Médio</SelectItem><SelectItem value="BAIXO">Baixo</SelectItem></SelectContent></Select></div>
               </div>
-              <div className="space-y-2 mt-4"><Label>Requisitos Contratuais</Label><Textarea value={formData.slaRequisitos} onChange={(e) => setFormData({ ...formData, slaRequisitos: e.target.value })} placeholder="Ex: Ar-condicionado obrigatório, veículo máx. 3 anos..." rows={3} /></div>
+              <div className="space-y-2 mt-4"><Label>Requisitos Contratuais</Label><Textarea value={formData.sla_requisitos} onChange={(e) => setFormData({ ...formData, sla_requisitos: e.target.value })} placeholder="Ex: Ar-condicionado obrigatório, veículo máx. 3 anos..." rows={3} /></div>
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-              <Button type="submit">{editingCliente ? "Salvar" : "Cadastrar"}</Button>
+              <Button type="submit" disabled={createCliente.isPending || updateCliente.isPending}>{editingCliente ? "Salvar" : "Cadastrar"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -156,24 +142,21 @@ export default function Clientes() {
       {/* Detalhes */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>{selectedCliente?.nomeEmpresa}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{selectedCliente?.nome}</DialogTitle></DialogHeader>
           {selectedCliente && (
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
-                <div><p className="text-xs text-muted-foreground uppercase">Empresa</p><p className="font-semibold">{selectedCliente.nomeEmpresa}</p></div>
-                <div><p className="text-xs text-muted-foreground uppercase">Responsável</p><p>{selectedCliente.nomeResponsavel}</p></div>
-                <div><p className="text-xs text-muted-foreground uppercase">CPF</p><p className="font-mono">{selectedCliente.cpf}</p></div>
-                <div><p className="text-xs text-muted-foreground uppercase">Telefone</p><p>{selectedCliente.telefone}</p></div>
+                <div><p className="text-xs text-muted-foreground uppercase">Empresa</p><p className="font-semibold">{selectedCliente.nome}</p></div>
+                <div><p className="text-xs text-muted-foreground uppercase">Contato</p><p>{selectedCliente.contato}</p></div>
                 <div className="col-span-2"><p className="text-xs text-muted-foreground uppercase">Email</p><p>{selectedCliente.email}</p></div>
               </div>
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-2">SLA e Contrato</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div><p className="text-xs text-muted-foreground uppercase">Nível</p><Badge className={selectedCliente.slaNivel === "ALTO" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}>{selectedCliente.slaNivel}</Badge></div>
-                  <div><p className="text-xs text-muted-foreground uppercase">Tempo</p><p className="font-bold">{selectedCliente.slaHoras}h</p></div>
-                  <div><p className="text-xs text-muted-foreground uppercase">Multa</p><p className="font-mono font-bold text-destructive">R$ {selectedCliente.multaDescumprimento.toLocaleString()}</p></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-xs text-muted-foreground uppercase">Nível</p><Badge className={selectedCliente.sla_nivel === "ALTO" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}>{selectedCliente.sla_nivel}</Badge></div>
+                  <div><p className="text-xs text-muted-foreground uppercase">Tempo</p><p className="font-bold">{selectedCliente.sla_horas}h</p></div>
                 </div>
-                <div className="mt-3"><p className="text-xs text-muted-foreground uppercase">Requisitos</p><p className="text-sm mt-1 bg-muted p-3 rounded-lg">{selectedCliente.slaRequisitos || "Nenhum"}</p></div>
+                <div className="mt-3"><p className="text-xs text-muted-foreground uppercase">Requisitos</p><p className="text-sm mt-1 bg-muted p-3 rounded-lg">{selectedCliente.sla_requisitos || "Nenhum"}</p></div>
               </div>
             </div>
           )}

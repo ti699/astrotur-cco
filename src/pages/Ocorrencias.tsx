@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  Plus, Search, Download, Upload, MoreHorizontal, Eye, Edit, Trash2, AlertTriangle, Clock, CheckCircle, FileText,
+  Plus, Search, Download, Upload, MoreHorizontal, Eye, Edit, Trash2, AlertTriangle, Clock, CheckCircle, FileText, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,17 +18,13 @@ import { ConfirmarExclusaoDialog } from "@/components/shared/ConfirmarExclusaoDi
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
+import { useOcorrencias, useUpdateOcorrencia, useDeleteOcorrencia, type Ocorrencia } from "@/services/useApi";
 
-const initialOccurrences = [
-  { id: 1, data: "25/03/2025", dataISO: "2025-03-25", hora: "18:00", plantonista: "ANDERSON", cliente: "JEEP", tipo: "SOCORRO", veiculoPrevisto: "101256", veiculoSubstituido: "101244", tipoQuebra: "PNEU", status: "CONCLUIDO", descricao: "Motorista PAULO SÉRGIO ligou informando PNEU traseiro interno lado esquerdo baixo" },
-  { id: 2, data: "25/03/2025", dataISO: "2025-03-25", hora: "14:14", plantonista: "IRANILDO", cliente: "JEEP", tipo: "SOCORRO", veiculoPrevisto: "102104", veiculoSubstituido: "101256", tipoQuebra: "ELETRICA", status: "CONCLUIDO", descricao: "Mot. Paulo sergio solicitando socorro de ar condicionado" },
-  { id: 3, data: "24/03/2025", dataISO: "2025-03-24", hora: "15:25", plantonista: "VALDOMIRO", cliente: "VILA GALÉ", tipo: "QUEBRA", veiculoPrevisto: "101318", veiculoSubstituido: "102016", tipoQuebra: "PNEU", status: "EM_ANDAMENTO", descricao: "O motorista ligou informando que o pneu dianteiro baixou" },
-  { id: 4, data: "24/03/2025", dataISO: "2025-03-24", hora: "10:25", plantonista: "VALDOMIRO", cliente: "MONTE RODOVIAS", tipo: "ATRASO", veiculoPrevisto: "304", veiculoSubstituido: null, tipoQuebra: null, status: "PENDENTE", descricao: "O carro 304 desceu para serviço de alinhamento" },
-  { id: 5, data: "07/01/2025", dataISO: "2025-01-07", hora: "03:30", plantonista: "MACARIO", cliente: "JEEP", tipo: "QUEBRA", veiculoPrevisto: "121904", veiculoSubstituido: "121928", tipoQuebra: "MECANICA", status: "CONCLUIDO", descricao: "Veículo 121904 com dificuldade para encher o balão" },
-];
+// Dados mock removidos — todos os dados vêm do backend via API
 
 const getStatusBadge = (status: string) => {
-  switch (status) {
+  const normalized = status?.toUpperCase();
+  switch (normalized) {
     case "CONCLUIDO": return <Badge className="bg-green-100 text-green-800 hover:bg-green-100 gap-1"><CheckCircle className="h-3 w-3" />Concluído</Badge>;
     case "EM_ANDAMENTO": return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 gap-1"><Clock className="h-3 w-3" />Em Andamento</Badge>;
     case "PENDENTE": return <Badge className="bg-red-100 text-red-800 hover:bg-red-100 gap-1"><AlertTriangle className="h-3 w-3" />Pendente</Badge>;
@@ -37,13 +33,16 @@ const getStatusBadge = (status: string) => {
 };
 
 const getTypeBadge = (type: string) => {
-  const colors: Record<string, string> = { QUEBRA: "bg-red-500", SOCORRO: "bg-orange-500", ATRASO: "bg-amber-500", INFORMAÇÃO: "bg-blue-500" };
-  return <Badge className={`${colors[type] || "bg-gray-500"} text-white`}>{type}</Badge>;
+  const colors: Record<string, string> = { QUEBRA: "bg-red-500", Quebra: "bg-red-500", SOCORRO: "bg-orange-500", Socorro: "bg-orange-500", ATRASO: "bg-amber-500", Atraso: "bg-amber-500", INFORMAÇÃO: "bg-blue-500", "Informação": "bg-blue-500" };
+  return <Badge className={`${colors[type] || "bg-gray-500"} text-white`}>{type || "—"}</Badge>;
 };
 
 export default function Ocorrencias() {
   const { toast } = useToast();
-  const [ocorrencias, setOcorrencias] = useState(initialOccurrences);
+  const { data: ocorrencias = [], isLoading } = useOcorrencias();
+  const updateOcorrencia = useUpdateOcorrencia();
+  const deleteOcorrencia = useDeleteOcorrencia();
+
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -55,42 +54,50 @@ export default function Ocorrencias() {
   const [editOpen, setEditOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [selected, setSelected] = useState<typeof initialOccurrences[0] | null>(null);
+  const [selected, setSelected] = useState<Ocorrencia | null>(null);
   const [editForm, setEditForm] = useState({ status: "", descricao: "" });
 
   const filtered = useMemo(() => {
     return ocorrencias.filter((occ) => {
-      const matchesSearch = occ.veiculoPrevisto.includes(searchTerm) || occ.cliente.toLowerCase().includes(searchTerm.toLowerCase()) || occ.plantonista.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === "all" || occ.status === statusFilter;
-      const matchesType = typeFilter === "all" || occ.tipo === typeFilter;
-      const matchesDateStart = !dataInicio || occ.dataISO >= dataInicio;
-      const matchesDateEnd = !dataFim || occ.dataISO <= dataFim;
+      const veiculo = occ.veiculo_placa || "";
+      const cliente = occ.cliente_nome || "";
+      const monitor = occ.monitor_nome || "";
+      const tipo = occ.tipo_ocorrencia || occ.tipo_quebra_nome || "";
+      const statusVal = (occ.status || "").toUpperCase();
+      const dateStr = (occ.data_ocorrencia || occ.data_quebra || "").split("T")[0];
+
+      const matchesSearch = !searchTerm ||
+        veiculo.includes(searchTerm) ||
+        cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        monitor.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter === "all" || statusVal === statusFilter.toUpperCase();
+      const matchesType = typeFilter === "all" || tipo.toUpperCase().includes(typeFilter.toUpperCase());
+      const matchesDateStart = !dataInicio || dateStr >= dataInicio;
+      const matchesDateEnd = !dataFim || dateStr <= dataFim;
       return matchesSearch && matchesStatus && matchesType && matchesDateStart && matchesDateEnd;
     });
   }, [ocorrencias, searchTerm, statusFilter, typeFilter, dataInicio, dataFim]);
 
   const stats = useMemo(() => ({
     total: filtered.length,
-    concluidas: filtered.filter((o) => o.status === "CONCLUIDO").length,
-    emAndamento: filtered.filter((o) => o.status === "EM_ANDAMENTO").length,
-    pendentes: filtered.filter((o) => o.status === "PENDENTE").length,
+    concluidas: filtered.filter((o) => (o.status || "").toUpperCase() === "CONCLUIDO").length,
+    emAndamento: filtered.filter((o) => (o.status || "").toUpperCase() === "EM_ANDAMENTO").length,
+    pendentes: filtered.filter((o) => (o.status || "").toUpperCase() === "PENDENTE").length,
   }), [filtered]);
 
-  const handleView = (occ: typeof initialOccurrences[0]) => { setSelected(occ); setDetalhesOpen(true); };
-  const handleEdit = (occ: typeof initialOccurrences[0]) => { setSelected(occ); setEditForm({ status: occ.status, descricao: occ.descricao }); setEditOpen(true); };
-  const handleDelete = (occ: typeof initialOccurrences[0]) => { setSelected(occ); setExcluirOpen(true); };
+  const handleView = (occ: Ocorrencia) => { setSelected(occ); setDetalhesOpen(true); };
+  const handleEdit = (occ: Ocorrencia) => { setSelected(occ); setEditForm({ status: occ.status || "", descricao: occ.descricao || "" }); setEditOpen(true); };
+  const handleDelete = (occ: Ocorrencia) => { setSelected(occ); setExcluirOpen(true); };
 
   const confirmEdit = () => {
     if (!selected) return;
-    setOcorrencias((prev) => prev.map((o) => o.id === selected.id ? { ...o, status: editForm.status, descricao: editForm.descricao } : o));
-    toast({ title: "Ocorrência atualizada!", description: `#${selected.id} salva com sucesso.` });
+    updateOcorrencia.mutate({ id: selected.id, status: editForm.status, descricao: editForm.descricao });
     setEditOpen(false);
   };
 
   const confirmDelete = () => {
     if (!selected) return;
-    setOcorrencias((prev) => prev.filter((o) => o.id !== selected.id));
-    toast({ title: "Ocorrência excluída", description: `#${selected.id} removida.` });
+    deleteOcorrencia.mutate(selected.id);
     setExcluirOpen(false);
   };
 
@@ -104,8 +111,16 @@ export default function Ocorrencias() {
         { label: "Em Andamento", valor: stats.emAndamento.toString() },
         { label: "Pendentes", valor: stats.pendentes.toString() },
       ],
-      colunas: ["Data", "Hora", "Plantonista", "Cliente", "Tipo", "Veículo", "Status"],
-      dados: filtered.map((o) => [o.data, o.hora, o.plantonista, o.cliente, o.tipo, o.veiculoPrevisto, o.status]),
+      colunas: ["Data", "Hora", "Monitor", "Cliente", "Tipo", "Veículo", "Status"],
+      dados: filtered.map((o) => [
+        (o.data_ocorrencia || o.data_quebra || "").split("T")[0],
+        (o.data_ocorrencia || "").slice(11, 16),
+        o.monitor_nome || "",
+        o.cliente_nome || "",
+        o.tipo_ocorrencia || o.tipo_quebra_nome || "",
+        o.veiculo_placa || "",
+        o.status || "",
+      ]),
     });
   };
 
@@ -117,23 +132,23 @@ export default function Ocorrencias() {
           <DetalhesDialog
             open={detalhesOpen}
             onOpenChange={setDetalhesOpen}
-            titulo={`Ocorrência #${selected.id}`}
-            subtitulo={`${selected.data} às ${selected.hora}`}
+            titulo={`Ocorrência #${selected?.numero_ocorrencia || selected?.numero || selected?.id}`}
+            subtitulo={(selected?.data_ocorrencia || selected?.data_quebra || "").slice(0, 10)}
             campos={[
-              { label: "Plantonista", valor: selected.plantonista },
-              { label: "Cliente", valor: selected.cliente },
-              { label: "Tipo", valor: selected.tipo, badge: true },
-              { label: "Status", valor: selected.status, badge: true },
-              { label: "Veículo Previsto", valor: `#${selected.veiculoPrevisto}` },
-              { label: "Veículo Substituído", valor: selected.veiculoSubstituido ? `#${selected.veiculoSubstituido}` : "N/A" },
-              { label: "Tipo Quebra", valor: selected.tipoQuebra || "N/A" },
-              { label: "Descrição", valor: selected.descricao },
+              { label: "Monitor", valor: selected?.monitor_nome || "N/A" },
+              { label: "Cliente", valor: selected?.cliente_nome || "N/A" },
+              { label: "Tipo", valor: selected?.tipo_ocorrencia || selected?.tipo_quebra_nome || "N/A", badge: true },
+              { label: "Status", valor: selected?.status || "N/A", badge: true },
+              { label: "Veículo", valor: selected?.veiculo_placa || "N/A" },
+              { label: "Veículo Substituto", valor: selected?.veiculo_substituto_placa || "N/A" },
+              { label: "Tipo Quebra", valor: selected?.tipo_quebra_nome || "N/A" },
+              { label: "Descrição", valor: selected?.descricao || "" },
             ]}
           />
           <ConfirmarExclusaoDialog
             open={excluirOpen}
             onOpenChange={setExcluirOpen}
-            descricao={`Excluir a ocorrência #${selected.id} (${selected.tipo} - ${selected.cliente})?`}
+            descricao={`Excluir a ocorrência #${selected?.numero_ocorrencia || selected?.id} (${selected?.tipo_ocorrencia || ""} - ${selected?.cliente_nome || ""})?`}
             onConfirmar={confirmDelete}
           />
         </>
@@ -173,21 +188,8 @@ export default function Ocorrencias() {
         titulo="Ocorrências"
         colunasEsperadas={["data", "hora", "plantonista", "cliente", "tipo", "veiculo_previsto", "status", "descricao"]}
         onImportar={(dados) => {
-          const novos = dados.map((d, i) => ({
-            id: Date.now() + i,
-            data: d.data || "",
-            dataISO: "",
-            hora: d.hora || "",
-            plantonista: d.plantonista || "",
-            cliente: d.cliente || "",
-            tipo: d.tipo || "",
-            veiculoPrevisto: d.veiculo_previsto || "",
-            veiculoSubstituido: null as string | null,
-            tipoQuebra: null as string | null,
-            status: d.status || "PENDENTE",
-            descricao: d.descricao || "",
-          }));
-          setOcorrencias((prev) => [...novos, ...prev]);
+          // TODO: chamar API para importação em lote
+          toast({ title: `${dados.length} registros lidos`, description: "Importação em lote via API será implementada em breve." });
         }}
       />
 
@@ -268,15 +270,23 @@ export default function Ocorrencias() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((occurrence) => (
+              {isLoading ? (
+                <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhuma ocorrência encontrada.</TableCell></TableRow>
+              ) : filtered.map((occurrence) => {
+                const tipo = occurrence.tipo_ocorrencia || occurrence.tipo_quebra_nome || "";
+                const dateStr = (occurrence.data_ocorrencia || occurrence.data_quebra || "").split("T")[0];
+                const hora = (occurrence.data_ocorrencia || "").slice(11, 16) || "";
+                return (
                 <TableRow key={occurrence.id} className="data-table-row">
-                  <TableCell className="font-mono text-sm"><div>{occurrence.data}</div><div className="text-muted-foreground">{occurrence.hora}</div></TableCell>
-                  <TableCell className="font-medium">{occurrence.plantonista}</TableCell>
-                  <TableCell>{occurrence.cliente}</TableCell>
-                  <TableCell>{getTypeBadge(occurrence.tipo)}</TableCell>
-                  <TableCell><div className="font-mono">#{occurrence.veiculoPrevisto}</div>{occurrence.veiculoSubstituido && <div className="text-xs text-muted-foreground">→ #{occurrence.veiculoSubstituido}</div>}</TableCell>
-                  <TableCell>{occurrence.tipoQuebra ? <span className="text-sm">{occurrence.tipoQuebra}</span> : <span className="text-muted-foreground">N/A</span>}</TableCell>
-                  <TableCell>{getStatusBadge(occurrence.status)}</TableCell>
+                  <TableCell className="font-mono text-sm"><div>{dateStr}</div><div className="text-muted-foreground">{hora}</div></TableCell>
+                  <TableCell className="font-medium">{occurrence.monitor_nome || "—"}</TableCell>
+                  <TableCell>{occurrence.cliente_nome || "—"}</TableCell>
+                  <TableCell>{getTypeBadge(tipo)}</TableCell>
+                  <TableCell><div className="font-mono">{occurrence.veiculo_placa || "—"}</div>{occurrence.veiculo_substituto_placa && <div className="text-xs text-muted-foreground">→ {occurrence.veiculo_substituto_placa}</div>}</TableCell>
+                  <TableCell>{occurrence.tipo_quebra_nome ? <span className="text-sm">{occurrence.tipo_quebra_nome}</span> : <span className="text-muted-foreground">N/A</span>}</TableCell>
+                  <TableCell>{getStatusBadge(occurrence.status || "")}</TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
@@ -288,7 +298,8 @@ export default function Ocorrencias() {
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              ))}
+              );
+              })}
             </TableBody>
           </Table>
         </CardContent>

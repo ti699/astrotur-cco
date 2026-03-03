@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
+import api from "@/services/api";
 
 export type UserRole = "administrador" | "editor" | "portaria";
 
@@ -7,26 +8,81 @@ interface AuthUser {
   nome: string;
   email: string;
   role: UserRole;
+  cargo?: string;
 }
 
 interface AuthContextType {
   user: AuthUser | null;
   setUser: (user: AuthUser | null) => void;
   hasAccess: (allowedRoles: UserRole[]) => boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Mock user - in production this would come from Lovable Cloud auth
-const mockUser: AuthUser = {
-  id: "1",
-  nome: "Administrador",
-  email: "admin@sistemacco.com",
-  role: "administrador",
-};
+const USER_KEY = "@SistemaCCO:user";
+const TOKEN_KEY = "@SistemaCCO:token";
+
+// Mapeia os perfis do backend para os roles do frontend
+function mapPerfil(perfil: string): UserRole {
+  if (perfil === "administrador") return "administrador";
+  if (perfil === "monitor" || perfil === "editor") return "editor";
+  return "portaria";
+}
+
+// Tenta recuperar o usuário salvo na sessão anterior
+function loadStoredUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(mockUser);
+  const [user, setUserState] = useState<AuthUser | null>(loadStoredUser);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const setUser = (u: AuthUser | null) => {
+    setUserState(u);
+    if (u) {
+      localStorage.setItem(USER_KEY, JSON.stringify(u));
+    } else {
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const { data } = await api.post("/auth/login", { email, password });
+      const backendUser = data.user;
+      const token: string = data.token;
+
+      const authUser: AuthUser = {
+        id: String(backendUser.id),
+        nome: backendUser.nome,
+        email: backendUser.email,
+        role: mapPerfil(backendUser.perfil),
+        cargo: backendUser.cargo,
+      };
+
+      localStorage.setItem(TOKEN_KEY, token);
+      setUser(authUser);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = () => {
+    setUser(null);
+    window.location.href = "/login";
+  };
 
   const hasAccess = (allowedRoles: UserRole[]) => {
     if (!user) return false;
@@ -34,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, hasAccess }}>
+    <AuthContext.Provider value={{ user, setUser, hasAccess, login, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

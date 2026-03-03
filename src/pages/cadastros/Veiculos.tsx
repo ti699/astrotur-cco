@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import {
-  Plus, Search, Upload, MoreHorizontal, Eye, Edit, Trash2, Truck, FileText,
+  Plus, Search, Upload, MoreHorizontal, Eye, Edit, Trash2, Truck, FileText, Loader2,
 } from "lucide-react";
+import { useVeiculos, useUpdateVeiculo, useDeleteVeiculo, type Veiculo } from "@/services/useApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,13 +20,6 @@ import { useToast } from "@/hooks/use-toast";
 
 type VeiculoStatus = "EM_OPERACAO" | "NA_GARAGEM" | "EM_MANUTENCAO" | "EM_ABASTECIMENTO" | "INATIVO";
 
-const initialVeiculos = [
-  { id: 1, numeroFrota: "121904", placa: "OXM-1234", tipo: "Ônibus", modelo: "Mercedes-Benz OF 1721", ano: 2020, cliente: "JEEP", status: "EM_OPERACAO" as VeiculoStatus, kmAtual: 245680, localizacao: "Goiana/PE" },
-  { id: 2, numeroFrota: "102104", placa: "OXN-5678", tipo: "Ônibus", modelo: "Volkswagen 17.230 OD", ano: 2019, cliente: "HDH", status: "NA_GARAGEM" as VeiculoStatus, kmAtual: 312450, localizacao: "Garagem Recife" },
-  { id: 3, numeroFrota: "2536", placa: "OXP-9012", tipo: "Micro-ônibus", modelo: "Volkswagen 9.160 OD", ano: 2021, cliente: "MONTE RODOVIAS", status: "EM_MANUTENCAO" as VeiculoStatus, kmAtual: 89230, localizacao: "Oficina Central" },
-  { id: 4, numeroFrota: "101318", placa: "OXQ-3456", tipo: "Ônibus", modelo: "Mercedes-Benz OF 1519", ano: 2018, cliente: "VILA GALÉ", status: "EM_ABASTECIMENTO" as VeiculoStatus, kmAtual: 456780, localizacao: "Posto Shell BR-101" },
-];
-
 const statusConfig: Record<VeiculoStatus, { cls: string; label: string }> = {
   EM_OPERACAO: { cls: "bg-green-100 text-green-800", label: "Em Operação" },
   NA_GARAGEM: { cls: "bg-blue-100 text-blue-800", label: "Na Garagem" },
@@ -41,23 +35,28 @@ const getStatusBadge = (status: VeiculoStatus) => {
 
 export default function Veiculos() {
   const { toast } = useToast();
-  const [veiculos, setVeiculos] = useState(initialVeiculos);
+  const { data: veiculosData, isLoading } = useVeiculos();
+  const updateVeiculo = useUpdateVeiculo();
+  const deleteVeiculo = useDeleteVeiculo();
+  const veiculos: Veiculo[] = veiculosData ?? [];
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [tipoFilter, setTipoFilter] = useState("all");
-  const [mesFilter, setMesFilter] = useState("all");
   const [detalhesOpen, setDetalhesOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [selected, setSelected] = useState<typeof initialVeiculos[0] | null>(null);
+  const [selected, setSelected] = useState<Veiculo | null>(null);
   const [editForm, setEditForm] = useState({ cliente: "", kmAtual: "", status: "", localizacao: "" });
 
   const filtered = useMemo(() => {
     return veiculos.filter((v) => {
-      const matchSearch = v.numeroFrota.includes(searchTerm) || v.placa.toLowerCase().includes(searchTerm.toLowerCase()) || v.modelo.toLowerCase().includes(searchTerm.toLowerCase());
+      const frota = (v.numero_frota ?? "").toString();
+      const placa = (v.placa ?? "").toLowerCase();
+      const modelo = (v.modelo ?? "").toLowerCase();
+      const matchSearch = frota.includes(searchTerm) || placa.includes(searchTerm.toLowerCase()) || modelo.includes(searchTerm.toLowerCase());
       const matchStatus = statusFilter === "all" || v.status === statusFilter;
-      const matchTipo = tipoFilter === "all" || v.tipo.toLowerCase().includes(tipoFilter);
+      const matchTipo = tipoFilter === "all" || (v.tipo ?? "").toLowerCase().includes(tipoFilter);
       return matchSearch && matchStatus && matchTipo;
     });
   }, [veiculos, searchTerm, statusFilter, tipoFilter]);
@@ -70,20 +69,28 @@ export default function Veiculos() {
     emAbastecimento: filtered.filter((v) => v.status === "EM_ABASTECIMENTO").length,
   }), [filtered]);
 
-  const handleView = (v: typeof initialVeiculos[0]) => { setSelected(v); setDetalhesOpen(true); };
-  const handleEdit = (v: typeof initialVeiculos[0]) => { setSelected(v); setEditForm({ cliente: v.cliente, kmAtual: v.kmAtual.toString(), status: v.status, localizacao: v.localizacao }); setEditOpen(true); };
-  const handleDelete = (v: typeof initialVeiculos[0]) => { setSelected(v); setExcluirOpen(true); };
+  const handleView = (v: Veiculo) => { setSelected(v); setDetalhesOpen(true); };
+  const handleEdit = (v: Veiculo) => {
+    setSelected(v);
+    setEditForm({ cliente: v.cliente_nome ?? "", kmAtual: (v.km_atual ?? "").toString(), status: v.status ?? "", localizacao: v.localizacao ?? "" });
+    setEditOpen(true);
+  };
+  const handleDelete = (v: Veiculo) => { setSelected(v); setExcluirOpen(true); };
 
   const confirmEdit = () => {
     if (!selected) return;
-    setVeiculos((prev) => prev.map((v) => v.id === selected.id ? { ...v, cliente: editForm.cliente, kmAtual: parseInt(editForm.kmAtual) || v.kmAtual, status: editForm.status as VeiculoStatus, localizacao: editForm.localizacao } : v));
-    toast({ title: "Veículo atualizado!" }); setEditOpen(false);
+    updateVeiculo.mutate({ id: selected.id, cliente_nome: editForm.cliente, km_atual: parseInt(editForm.kmAtual) || 0, status: editForm.status, localizacao: editForm.localizacao }, {
+      onSuccess: () => { toast({ title: "Veículo atualizado!" }); setEditOpen(false); },
+      onError: () => toast({ title: "Erro ao atualizar", variant: "destructive" }),
+    });
   };
 
   const confirmDelete = () => {
     if (!selected) return;
-    setVeiculos((prev) => prev.map((v) => v.id === selected.id ? { ...v, status: "INATIVO" as VeiculoStatus } : v));
-    toast({ title: "Veículo desativado" }); setExcluirOpen(false);
+    deleteVeiculo.mutate(selected.id, {
+      onSuccess: () => { toast({ title: "Veículo desativado" }); setExcluirOpen(false); },
+      onError: () => toast({ title: "Erro ao desativar", variant: "destructive" }),
+    });
   };
 
   const handleRelatorio = async () => {
@@ -105,18 +112,18 @@ export default function Veiculos() {
     <div className="space-y-6 animate-fade-in">
       {selected && (
         <>
-          <DetalhesDialog open={detalhesOpen} onOpenChange={setDetalhesOpen} titulo={`Veículo #${selected.numeroFrota}`} subtitulo={selected.modelo}
+          <DetalhesDialog open={detalhesOpen} onOpenChange={setDetalhesOpen} titulo={`Veículo #${selected.numero_frota}`} subtitulo={selected.modelo ?? ""}
             campos={[
               { label: "Placa", valor: selected.placa },
-              { label: "Tipo", valor: selected.tipo },
-              { label: "Ano", valor: selected.ano.toString() },
-              { label: "Cliente", valor: selected.cliente },
-              { label: "KM Atual", valor: `${selected.kmAtual.toLocaleString()} km` },
-              { label: "Status", valor: statusConfig[selected.status].label, badge: true },
-              { label: "Localização", valor: selected.localizacao },
+              { label: "Tipo", valor: selected.tipo ?? "" },
+              { label: "Ano", valor: (selected.ano ?? "").toString() },
+              { label: "Cliente", valor: selected.cliente_nome ?? "" },
+              { label: "KM Atual", valor: `${(selected.km_atual ?? 0).toLocaleString()} km` },
+              { label: "Status", valor: statusConfig[selected.status as VeiculoStatus]?.label ?? selected.status, badge: true },
+              { label: "Localização", valor: selected.localizacao ?? "" },
             ]}
           />
-          <ConfirmarExclusaoDialog open={excluirOpen} onOpenChange={setExcluirOpen} titulo="Desativar Veículo" descricao={`Desativar veículo #${selected.numeroFrota}?`} onConfirmar={confirmDelete} />
+          <ConfirmarExclusaoDialog open={excluirOpen} onOpenChange={setExcluirOpen} titulo="Desativar Veículo" descricao={`Desativar veículo #${selected.numero_frota}?`} onConfirmar={confirmDelete} />
         </>
       )}
 
@@ -139,9 +146,9 @@ export default function Veiculos() {
         </DialogContent>
       </Dialog>
 
-      <ImportarCSVDialog open={importOpen} onOpenChange={setImportOpen} titulo="Veículos" colunasEsperadas={["numero_frota", "placa", "tipo", "modelo", "ano", "cliente", "km_atual", "status", "localizacao"]} onImportar={(dados) => {
-        const novos = dados.map((d, i) => ({ id: Date.now() + i, numeroFrota: d.numero_frota || "", placa: d.placa || "", tipo: d.tipo || "Ônibus", modelo: d.modelo || "", ano: parseInt(d.ano) || 2020, cliente: d.cliente || "", status: (d.status || "NA_GARAGEM") as VeiculoStatus, kmAtual: parseInt(d.km_atual) || 0, localizacao: d.localizacao || "Garagem" }));
-        setVeiculos((prev) => [...novos, ...prev]);
+      <ImportarCSVDialog open={importOpen} onOpenChange={setImportOpen} titulo="Veículos" colunasEsperadas={["numero_frota", "placa", "tipo", "modelo", "ano", "cliente", "km_atual", "status", "localizacao"]} onImportar={() => {
+        toast({ title: "Importação via CSV", description: "Envie o arquivo para o backend para importação em lote." });
+        setImportOpen(false);
       }} />
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -180,14 +187,18 @@ export default function Veiculos() {
         <Table>
           <TableHeader><TableRow className="data-table-header"><TableHead>Nº Frota</TableHead><TableHead>Placa</TableHead><TableHead>Modelo</TableHead><TableHead>Cliente</TableHead><TableHead>KM</TableHead><TableHead>Status</TableHead><TableHead>Localização</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader>
           <TableBody>
-            {filtered.map((veiculo) => (
+            {isLoading ? (
+              <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+            ) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
+            ) : filtered.map((veiculo) => (
               <TableRow key={veiculo.id} className="data-table-row">
-                <TableCell className="font-mono font-bold text-primary">#{veiculo.numeroFrota}</TableCell>
+                <TableCell className="font-mono font-bold text-primary">#{veiculo.numero_frota}</TableCell>
                 <TableCell className="font-mono">{veiculo.placa}</TableCell>
                 <TableCell>{veiculo.modelo}</TableCell>
-                <TableCell>{veiculo.cliente}</TableCell>
-                <TableCell className="font-mono">{veiculo.kmAtual.toLocaleString()}</TableCell>
-                <TableCell>{getStatusBadge(veiculo.status)}</TableCell>
+                <TableCell>{veiculo.cliente_nome}</TableCell>
+                <TableCell className="font-mono">{(veiculo.km_atual ?? 0).toLocaleString()}</TableCell>
+                <TableCell>{getStatusBadge((veiculo.status ?? "NA_GARAGEM") as VeiculoStatus)}</TableCell>
                 <TableCell className="text-sm">{veiculo.localizacao}</TableCell>
                 <TableCell>
                   <DropdownMenu>
