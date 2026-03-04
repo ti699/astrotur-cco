@@ -51,7 +51,7 @@ const getStatusBadge = (status: ManutencaoStatus) => {
 
 export default function Manutencao() {
   const { toast } = useToast();
-  const [manutencoes, setManutencoes] = useState(initialManutencoes);
+  const [manutencoes, setManutencoes] = useState<Manutencao[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [novaOpen, setNovaOpen] = useState(false);

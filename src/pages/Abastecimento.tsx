@@ -37,7 +37,7 @@ const initialAbastecimentos: Abastecimento[] = [
 
 export default function Abastecimento() {
   const { toast } = useToast();
-  const [abastecimentos, setAbastecimentos] = useState(initialAbastecimentos);
+  const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [retornoFilter, setRetornoFilter] = useState("all");
   const [novaOpen, setNovaOpen] = useState(false);

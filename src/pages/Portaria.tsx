@@ -18,23 +18,24 @@ import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
 
-const mockEntradas = [
-  { id: 1, dataHora: "01/11/2025 09:55", monitor: "VALDOMIRO", veiculo: "122420", kmEntrada: 196853, kmInicioRota: 196810, kmFimRota: 196845, motorista: "WALLISON ALVES", cliente: "HDH", localSaida: "ESTÂNCIA", motivo: "RECOLHE NA GARAGEM", programado: true },
-  { id: 2, dataHora: "01/11/2025 08:07", monitor: "VALDOMIRO", veiculo: "121902", kmEntrada: 752956, kmInicioRota: 752880, kmFimRota: 752940, motorista: "EDINALDO CORREIA", cliente: "JEEP", localSaida: "PAULISTA", motivo: "MANUTENÇÃO", programado: false, descricao: "REGULAR FREIOS" },
-  { id: 3, dataHora: "01/11/2025 00:38", monitor: "ANDERSON", veiculo: "2406", kmEntrada: 179002, kmInicioRota: 178950, kmFimRota: 178990, motorista: "REGINALDO", cliente: "CAMPARI", localSaida: "BARRO", motivo: "MANUTENÇÃO", programado: false, descricao: "CORTANDO ACELERAÇÃO" },
-];
-
-const mockSaidas = [
-  { id: 1, dataHora: "01/11/2025 10:30", monitor: "VALDOMIRO", veiculo: "122420", kmSaida: 196860, motorista: "MARCOS SILVA", destino: "TECON", vistoriaConforme: true },
-  { id: 2, dataHora: "01/11/2025 09:15", monitor: "VALDOMIRO", veiculo: "102508", kmSaida: 94300, motorista: "NELSON MARIANO", destino: "TECON", vistoriaConforme: true },
-];
+interface EntradaRecord {
+  id: number; dataHora: string; monitor: string; veiculo: string;
+  kmEntrada: number; kmInicioRota: number; kmFimRota: number;
+  motorista: string; cliente: string; localSaida: string;
+  motivo: string; programado: boolean; descricao?: string;
+}
+interface SaidaRecord {
+  id: number; dataHora: string; monitor: string; veiculo: string;
+  kmSaida: number; motorista: string; destino: string; vistoriaConforme: boolean;
+  observacoes?: string;
+}
 
 const motivosEntrada = ["RECOLHE NA GARAGEM", "MANUTENÇÃO", "ABASTECIMENTO", "SOLICITAÇÃO OPERAÇÃO"];
 const monitores = ["VALDOMIRO", "MACARIO", "IRANILDO", "ANDERSON"];
 
 // Calcula KM morto refinado
-const calcKmMorto = (entry: typeof mockEntradas[0]) => {
-  const kmSaidaGaragem = entry.kmInicioRota - 10; // mock: saída garagem ~10km antes
+const calcKmMorto = (entry: EntradaRecord) => {
+  const kmSaidaGaragem = entry.kmInicioRota - 10;
   const garagemInicio = entry.kmInicioRota - kmSaidaGaragem;
   const fimGaragem = entry.kmEntrada - entry.kmFimRota;
   return { produtivo: entry.kmFimRota - entry.kmInicioRota, morto: garagemInicio + fimGaragem, total: entry.kmEntrada - kmSaidaGaragem };
@@ -42,24 +43,31 @@ const calcKmMorto = (entry: typeof mockEntradas[0]) => {
 
 export default function Portaria() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [entradas, setEntradas] = useState<EntradaRecord[]>([]);
+  const [saidas, setSaidas] = useState<SaidaRecord[]>([]);
   const [entradaDialogOpen, setEntradaDialogOpen] = useState(false);
   const [saidaDialogOpen, setSaidaDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [detalhesOpen, setDetalhesOpen] = useState(false);
-  const [selectedEntry, setSelectedEntry] = useState<typeof mockEntradas[0] | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<EntradaRecord | null>(null);
   const { toast } = useToast();
 
+  // Form state: Entrada
+  const [formEntrada, setFormEntrada] = useState({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmEntrada: "", kmInicioRota: "", kmFimRota: "", motorista: "", cliente: "", localSaida: "", motivo: "", descricao: "" });
+  // Form state: Saída
+  const [formSaida, setFormSaida] = useState({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });
+
   const filteredEntradas = useMemo(() => {
-    return mockEntradas.filter((e) =>
+    return entradas.filter((e) =>
       e.veiculo.includes(searchTerm) || e.motorista.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [entradas, searchTerm]);
 
   const filteredSaidas = useMemo(() => {
-    return mockSaidas.filter((s) =>
+    return saidas.filter((s) =>
       s.veiculo.includes(searchTerm) || s.motorista.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [saidas, searchTerm]);
 
   const stats = useMemo(() => ({
     naGaragem: filteredEntradas.length,
@@ -68,19 +76,57 @@ export default function Portaria() {
     saidasHoje: filteredSaidas.length,
   }), [filteredEntradas, filteredSaidas]);
 
-  const handleViewEntry = (entry: typeof mockEntradas[0]) => {
+  const handleViewEntry = (entry: EntradaRecord) => {
     setSelectedEntry(entry);
     setDetalhesOpen(true);
   };
 
   const handleRegistrarEntrada = () => {
+    if (!formEntrada.veiculo || !formEntrada.kmEntrada) {
+      toast({ title: "Campos obrigatórios", description: "Preencha veículo e KM de entrada.", variant: "destructive" });
+      return;
+    }
+    const nova: EntradaRecord = {
+      id: Date.now(),
+      dataHora: new Date(formEntrada.dataHora).toLocaleString("pt-BR"),
+      monitor: formEntrada.monitor,
+      veiculo: formEntrada.veiculo,
+      kmEntrada: parseInt(formEntrada.kmEntrada) || 0,
+      kmInicioRota: parseInt(formEntrada.kmInicioRota) || 0,
+      kmFimRota: parseInt(formEntrada.kmFimRota) || 0,
+      motorista: formEntrada.motorista,
+      cliente: formEntrada.cliente,
+      localSaida: formEntrada.localSaida,
+      motivo: formEntrada.motivo,
+      programado: true,
+      descricao: formEntrada.descricao,
+    };
+    setEntradas((prev) => [nova, ...prev]);
     toast({ title: "Entrada registrada!", description: "A entrada do veículo foi registrada com sucesso." });
     setEntradaDialogOpen(false);
+    setFormEntrada({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmEntrada: "", kmInicioRota: "", kmFimRota: "", motorista: "", cliente: "", localSaida: "", motivo: "", descricao: "" });
   };
 
   const handleRegistrarSaida = () => {
+    if (!formSaida.veiculo || !formSaida.kmSaida) {
+      toast({ title: "Campos obrigatórios", description: "Preencha veículo e KM de saída.", variant: "destructive" });
+      return;
+    }
+    const nova: SaidaRecord = {
+      id: Date.now(),
+      dataHora: new Date(formSaida.dataHora).toLocaleString("pt-BR"),
+      monitor: formSaida.monitor,
+      veiculo: formSaida.veiculo,
+      kmSaida: parseInt(formSaida.kmSaida) || 0,
+      motorista: formSaida.motorista,
+      destino: formSaida.destino,
+      vistoriaConforme: formSaida.vistoriaConforme === "sim",
+      observacoes: formSaida.observacoes,
+    };
+    setSaidas((prev) => [nova, ...prev]);
     toast({ title: "Saída registrada!", description: "A saída do veículo foi registrada com sucesso." });
     setSaidaDialogOpen(false);
+    setFormSaida({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });
   };
 
   const handleRelatorio = async () => {
@@ -93,7 +139,7 @@ export default function Portaria() {
         { label: "Saídas Hoje", valor: stats.saidasHoje.toString() },
       ],
       colunas: ["Data/Hora", "Monitor", "Veículo", "KM", "Motorista", "Cliente", "Motivo"],
-      dados: mockEntradas.map((e) => [e.dataHora, e.monitor, `#${e.veiculo}`, e.kmEntrada.toLocaleString(), e.motorista, e.cliente, e.motivo]),
+      dados: entradas.map((e) => [e.dataHora, e.monitor, `#${e.veiculo}`, e.kmEntrada.toLocaleString(), e.motorista, e.cliente, e.motivo]),
     });
   };
 
@@ -121,7 +167,23 @@ export default function Portaria() {
         />
       )}
 
-      <ImportarCSVDialog open={importOpen} onOpenChange={setImportOpen} titulo="Portaria" colunasEsperadas={["data_hora", "monitor", "veiculo", "km", "motorista", "cliente", "motivo"]} onImportar={() => {}} />
+      <ImportarCSVDialog open={importOpen} onOpenChange={setImportOpen} titulo="Portaria" colunasEsperadas={["data_hora", "monitor", "veiculo", "km", "motorista", "cliente", "motivo"]} onImportar={(rows) => {
+        const imported: EntradaRecord[] = rows.map((r, i) => ({
+          id: Date.now() + i,
+          dataHora: r.data_hora || "",
+          monitor: r.monitor || "",
+          veiculo: r.veiculo || "",
+          kmEntrada: parseInt(r.km) || 0,
+          kmInicioRota: 0, kmFimRota: 0,
+          motorista: r.motorista || "",
+          cliente: r.cliente || "",
+          localSaida: "",
+          motivo: r.motivo || "",
+          programado: true,
+        }));
+        setEntradas((prev) => [...imported, ...prev]);
+        toast({ title: `${imported.length} registros importados`, description: "Entradas adicionadas com sucesso." });
+      }} />
 
       {/* Page Header */}
       <div className="flex items-center justify-between">
@@ -144,26 +206,26 @@ export default function Portaria() {
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Data/Hora</Label><Input type="datetime-local" defaultValue={new Date().toISOString().slice(0, 16)} /></div>
-                  <div className="space-y-2"><Label>Monitor</Label><Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{monitores.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-2"><Label>Data/Hora</Label><Input type="datetime-local" value={formEntrada.dataHora} onChange={(e) => setFormEntrada(f => ({...f, dataHora: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>Monitor</Label><Select value={formEntrada.monitor} onValueChange={(v) => setFormEntrada(f => ({...f, monitor: v}))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{monitores.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Veículo *</Label><Input placeholder="Ex: 121904" /></div>
-                  <div className="space-y-2"><Label>KM Entrada *</Label><Input type="number" placeholder="Ex: 196853" /></div>
+                  <div className="space-y-2"><Label>Veículo *</Label><Input placeholder="Ex: 121904" value={formEntrada.veiculo} onChange={(e) => setFormEntrada(f => ({...f, veiculo: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>KM Entrada *</Label><Input type="number" placeholder="Ex: 196853" value={formEntrada.kmEntrada} onChange={(e) => setFormEntrada(f => ({...f, kmEntrada: e.target.value}))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>KM Início da Rota</Label><Input type="number" placeholder="Onde pegou passageiros" /></div>
-                  <div className="space-y-2"><Label>KM Fim da Rota</Label><Input type="number" placeholder="Onde deixou passageiros" /></div>
+                  <div className="space-y-2"><Label>KM Início da Rota</Label><Input type="number" placeholder="Onde pegou passageiros" value={formEntrada.kmInicioRota} onChange={(e) => setFormEntrada(f => ({...f, kmInicioRota: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>KM Fim da Rota</Label><Input type="number" placeholder="Onde deixou passageiros" value={formEntrada.kmFimRota} onChange={(e) => setFormEntrada(f => ({...f, kmFimRota: e.target.value}))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Motorista</Label><Input placeholder="Nome do motorista" /></div>
-                  <div className="space-y-2"><Label>Cliente</Label><Input placeholder="Ex: JEEP" /></div>
+                  <div className="space-y-2"><Label>Motorista</Label><Input placeholder="Nome do motorista" value={formEntrada.motorista} onChange={(e) => setFormEntrada(f => ({...f, motorista: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>Cliente</Label><Input placeholder="Ex: JEEP" value={formEntrada.cliente} onChange={(e) => setFormEntrada(f => ({...f, cliente: e.target.value}))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Local de Saída</Label><Input placeholder="Última localização" /></div>
-                  <div className="space-y-2"><Label>Motivo da Entrada</Label><Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{motivosEntrada.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-2"><Label>Local de Saída</Label><Input placeholder="Última localização" value={formEntrada.localSaida} onChange={(e) => setFormEntrada(f => ({...f, localSaida: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>Motivo da Entrada</Label><Select value={formEntrada.motivo} onValueChange={(v) => setFormEntrada(f => ({...f, motivo: v}))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{motivosEntrada.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
                 </div>
-                <div className="space-y-2"><Label>Descrições Adicionais</Label><Textarea placeholder="Observações..." /></div>
+                <div className="space-y-2"><Label>Descrições Adicionais</Label><Textarea placeholder="Observações..." value={formEntrada.descricao} onChange={(e) => setFormEntrada(f => ({...f, descricao: e.target.value}))} /></div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setEntradaDialogOpen(false)}>Cancelar</Button>
@@ -183,22 +245,22 @@ export default function Portaria() {
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Data/Hora</Label><Input type="datetime-local" defaultValue={new Date().toISOString().slice(0, 16)} /></div>
-                  <div className="space-y-2"><Label>Monitor</Label><Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{monitores.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-2"><Label>Data/Hora</Label><Input type="datetime-local" value={formSaida.dataHora} onChange={(e) => setFormSaida(f => ({...f, dataHora: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>Monitor</Label><Select value={formSaida.monitor} onValueChange={(v) => setFormSaida(f => ({...f, monitor: v}))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{monitores.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Veículo *</Label><Input placeholder="Ex: 121904" /></div>
-                  <div className="space-y-2"><Label>KM Saída *</Label><Input type="number" placeholder="Ex: 196860" /></div>
+                  <div className="space-y-2"><Label>Veículo *</Label><Input placeholder="Ex: 121904" value={formSaida.veiculo} onChange={(e) => setFormSaida(f => ({...f, veiculo: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>KM Saída *</Label><Input type="number" placeholder="Ex: 196860" value={formSaida.kmSaida} onChange={(e) => setFormSaida(f => ({...f, kmSaida: e.target.value}))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Motorista</Label><Input placeholder="Nome do motorista" /></div>
-                  <div className="space-y-2"><Label>Destino/Cliente</Label><Input placeholder="Ex: TECON" /></div>
+                  <div className="space-y-2"><Label>Motorista</Label><Input placeholder="Nome do motorista" value={formSaida.motorista} onChange={(e) => setFormSaida(f => ({...f, motorista: e.target.value}))} /></div>
+                  <div className="space-y-2"><Label>Destino/Cliente</Label><Input placeholder="Ex: TECON" value={formSaida.destino} onChange={(e) => setFormSaida(f => ({...f, destino: e.target.value}))} /></div>
                 </div>
                 <div className="space-y-2">
                   <Label>Vistoria Conforme?</Label>
-                  <Select defaultValue="sim"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sim">Sim - Conforme</SelectItem><SelectItem value="nao">Não - Com problemas</SelectItem></SelectContent></Select>
+                  <Select value={formSaida.vistoriaConforme} onValueChange={(v) => setFormSaida(f => ({...f, vistoriaConforme: v}))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sim">Sim - Conforme</SelectItem><SelectItem value="nao">Não - Com problemas</SelectItem></SelectContent></Select>
                 </div>
-                <div className="space-y-2"><Label>Observações</Label><Textarea placeholder="Observações adicionais..." /></div>
+                <div className="space-y-2"><Label>Observações</Label><Textarea placeholder="Observações adicionais..." value={formSaida.observacoes} onChange={(e) => setFormSaida(f => ({...f, observacoes: e.target.value}))} /></div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setSaidaDialogOpen(false)}>Cancelar</Button>

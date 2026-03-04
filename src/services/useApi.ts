@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Hooks TanStack Query â€” integraÃ§Ã£o direta com Supabase.
  * Funciona em produÃ§Ã£o (Vercel) sem precisar de backend Express.
  */
@@ -514,35 +514,27 @@ export function useCreateUsuario() {
 
   return useMutation({
     mutationFn: async (payload: Partial<Usuario> & { senha?: string }) => {
-      // Usar bcrypt hash via RPC ou inserir somente em backend â€” aqui usamos placeholder
-      // A senha deve ser hasheada no backend; por enquanto usa hash fixo do admin se vazia
-      const { data, error } = await supabase
-        .from('usuarios')
-        .insert({
-          nome: payload.nome,
-          email: payload.email,
-          cargo: payload.cargo,
-          perfil: payload.perfil,
-          // senha precisa de hash â€” usar RPC ou deixar como estÃ¡ no backend
-          senha: payload.senha ?? '$2a$10$EExPvC68u8D04Zt7b2q5cugf2ESr0IDl6OeCvuWthhYuiZ5LTz5Ty',
-          ativo: true,
-        })
-        .select('id, nome, email, perfil, cargo, ativo')
-        .single();
-
+      // Usa RPC criar_usuario para hashear a senha com bcrypt (pgcrypto) no servidor
+      const { data, error } = await supabase.rpc('criar_usuario', {
+        p_nome:   payload.nome,
+        p_email:  payload.email,
+        p_senha:  payload.senha || 'mudar@123',
+        p_cargo:  payload.cargo  || null,
+        p_perfil: payload.perfil || 'portaria',
+      });
       if (error) throw new Error(error.message);
-      return data as Usuario;
+      if (data?.error) throw new Error(data.message || 'Erro ao criar usuario');
+      return { id: data.id, nome: data.nome, email: data.email, perfil: data.perfil, cargo: data.cargo, ativo: true } as Usuario;
     },
     onSuccess: (novo) => {
       queryClient.setQueryData<Usuario[]>(['usuarios'], (old = []) => [novo, ...old]);
-      toast({ title: 'UsuÃ¡rio cadastrado!', description: 'Senha padrÃ£o: admin123' });
+      toast({ title: 'Usuario cadastrado!', description: 'Senha definida conforme informado.' });
     },
     onError: (err: Error) => {
       toast({ title: 'Erro ao cadastrar', description: err.message, variant: 'destructive' });
     },
   });
 }
-
 export function useUpdateUsuario() {
   const queryClient = useQueryClient();
   const { toast } = useToast();

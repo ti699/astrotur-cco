@@ -24,6 +24,7 @@ import Relatorios from "./pages/Relatorios";
 import Importacao from "./pages/Importacao";
 import Configuracoes from "./pages/Configuracoes";
 import BancoDistancias from "./pages/BancoDistancias";
+import Perfil from "./pages/Perfil";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -64,6 +65,7 @@ const App = () => (
               <Route path="/importacao" element={<ProtectedRoute allowedRoles={["administrador"]}><Importacao /></ProtectedRoute>} />
               <Route path="/configuracoes" element={<ProtectedRoute allowedRoles={["administrador"]}><Configuracoes /></ProtectedRoute>} />
               <Route path="/banco-distancias" element={<ProtectedRoute allowedRoles={["administrador"]}><BancoDistancias /></ProtectedRoute>} />
+              <Route path="/perfil" element={<Perfil />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

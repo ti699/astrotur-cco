@@ -102,3 +102,44 @@ $$;
 
 -- Confirmar
 SELECT 'Migração concluída com sucesso!' as resultado;
+
+-- 7. Criar usuário com senha bcrypt
+CREATE OR REPLACE FUNCTION criar_usuario(
+  p_nome    text,
+  p_email   text,
+  p_senha   text,
+  p_cargo   text DEFAULT NULL,
+  p_perfil  text DEFAULT 'portaria'
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_id integer;
+BEGIN
+  INSERT INTO usuarios (nome, email, senha, cargo, perfil, ativo)
+  VALUES (p_nome, p_email, crypt(p_senha, gen_salt('bf')), p_cargo, p_perfil, true)
+  RETURNING id INTO v_id;
+
+  RETURN json_build_object('id', v_id, 'nome', p_nome, 'email', p_email, 'perfil', p_perfil, 'cargo', p_cargo);
+END;
+$$;
+
+-- 8. Alterar senha de um usuário (usada na página de Perfil)
+CREATE OR REPLACE FUNCTION alterar_senha(
+  p_id        integer,
+  p_nova_senha text
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE usuarios
+  SET senha = crypt(p_nova_senha, gen_salt('bf'))
+  WHERE id = p_id;
+
+  RETURN json_build_object('ok', true);
+END;
+$$;

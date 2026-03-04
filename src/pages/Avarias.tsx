@@ -54,7 +54,7 @@ export default function Avarias() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [workflowOpen, setWorkflowOpen] = useState(false);
-  const [avarias, setAvarias] = useState(initialAvarias);
+  const [avarias, setAvarias] = useState<typeof initialAvarias>([]);
   const [importOpen, setImportOpen] = useState(false);
 
   // Dossiê modal

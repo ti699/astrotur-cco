@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuditLog } from "@/hooks/useAuditLog";
+import { useOcorrencias } from "@/services/useApi";
+import { Textarea } from "@/components/ui/textarea";
 
 interface FinalizarPlantaoDialogProps {
   open: boolean;
@@ -41,54 +43,6 @@ interface FinalizarPlantaoDialogProps {
 
 const plantonistas = ["VALDOMIRO", "MACARIO", "IRANILDO", "ANDERSON"];
 
-// Mock de ocorrências do turno
-const mockOcorrenciasTurno = [
-  {
-    id: "1",
-    hora: "06:15",
-    tipo: "ATRASO",
-    veiculo: "121904",
-    cliente: "JEEP",
-    status: "CONCLUIDO",
-    descricao: "Atraso de 20 minutos na chegada",
-  },
-  {
-    id: "2",
-    hora: "08:30",
-    tipo: "SOCORRO",
-    veiculo: "102104",
-    cliente: "HDH",
-    status: "CONCLUIDO",
-    descricao: "Pneu furado - substituído em campo",
-  },
-  {
-    id: "3",
-    hora: "10:45",
-    tipo: "TROCA",
-    veiculo: "101318",
-    cliente: "VILA GALÉ",
-    status: "EM_ANDAMENTO",
-    descricao: "Troca de veículo por problema no ar-condicionado",
-  },
-  {
-    id: "4",
-    hora: "14:20",
-    tipo: "SOCORRO",
-    veiculo: "2408",
-    cliente: "CBA",
-    status: "PENDENTE",
-    descricao: "Problema elétrico - aguardando mecânico",
-  },
-  {
-    id: "5",
-    hora: "16:00",
-    tipo: "INFORMAÇÃO",
-    veiculo: "122420",
-    cliente: "TECON",
-    status: "CONCLUIDO",
-    descricao: "Alteração de programação solicitada pelo cliente",
-  },
-];
 
 const getTipoColor = (tipo: string) => {
   switch (tipo) {
@@ -124,24 +78,37 @@ export function FinalizarPlantaoDialog({
 }: FinalizarPlantaoDialogProps) {
   const { toast } = useToast();
   const { registrarLog } = useAuditLog();
-  
+  const { data: ocorrenciasRaw = [] } = useOcorrencias();
+
+  // Mapeia ocorrências reais para o formato do relatório
+  const ocorrenciasTurno = ocorrenciasRaw.map((o) => ({
+    id: String(o.id),
+    hora: o.horario_socorro || o.horario_saida || "--:--",
+    tipo: o.tipo_ocorrencia || o.tipo_quebra_nome || "OCORRÊNCIA",
+    veiculo: o.veiculo_placa || "--",
+    cliente: o.cliente_nome || "--",
+    status: o.status === "resolvido" ? "CONCLUIDO" : o.status === "em_andamento" ? "EM_ANDAMENTO" : "PENDENTE",
+    descricao: o.descricao || "",
+  }));
+
   const [proximoPlantonista, setProximoPlantonista] = useState("");
   const [pendenciasConfirmadas, setPendenciasConfirmadas] = useState(false);
   const [enviandoEmail, setEnviandoEmail] = useState(false);
+  const [observacoes, setObservacoes] = useState("");
 
-  const pendencias = mockOcorrenciasTurno.filter(
+  const pendencias = ocorrenciasTurno.filter(
     (o) => o.status !== "CONCLUIDO"
   );
-  const concluidas = mockOcorrenciasTurno.filter(
+  const concluidas = ocorrenciasTurno.filter(
     (o) => o.status === "CONCLUIDO"
   );
 
   const totais = {
-    total: mockOcorrenciasTurno.length,
-    atrasos: mockOcorrenciasTurno.filter((o) => o.tipo === "ATRASO").length,
-    socorros: mockOcorrenciasTurno.filter((o) => o.tipo === "SOCORRO").length,
-    trocas: mockOcorrenciasTurno.filter((o) => o.tipo === "TROCA").length,
-    informacoes: mockOcorrenciasTurno.filter((o) => o.tipo === "INFORMAÇÃO").length,
+    total: ocorrenciasTurno.length,
+    atrasos: ocorrenciasTurno.filter((o) => o.tipo === "ATRASO").length,
+    socorros: ocorrenciasTurno.filter((o) => o.tipo === "SOCORRO").length,
+    trocas: ocorrenciasTurno.filter((o) => o.tipo === "TROCA" || o.tipo === "TROCA_VEICULO").length,
+    informacoes: ocorrenciasTurno.filter((o) => o.tipo === "INFORMAÇÃO" || o.tipo === "INFORMACAO").length,
   };
 
   const plantonistaAtual = "VALDOMIRO"; // Em produção, virá do contexto de autenticação
@@ -194,7 +161,7 @@ export function FinalizarPlantaoDialog({
     let yPos = 130;
     doc.setFontSize(9);
     
-    mockOcorrenciasTurno.forEach((oc) => {
+    ocorrenciasTurno.forEach((oc) => {
       if (yPos > 260) {
         doc.addPage();
         yPos = 20;
@@ -411,7 +378,17 @@ export function FinalizarPlantaoDialog({
             {/* Passagem de Bastão */}
             <div className="space-y-4 pt-4 border-t">
               <h4 className="font-medium">Passagem de Bastão</h4>
-              
+
+              <div className="space-y-2">
+                <Label>Observações do Turno</Label>
+                <Textarea
+                  placeholder="Descreva situações importantes, intercorrências ou qualquer observação relevante para o próximo plantonista..."
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  rows={4}
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label>Próximo Plantonista *</Label>
                 <Select

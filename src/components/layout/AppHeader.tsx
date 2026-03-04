@@ -9,11 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { FinalizarPlantaoDialog } from "@/components/plantao/FinalizarPlantaoDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import logoAstrotur from "@/assets/logo-astrotur.png";
 
 export function AppHeader() {
   const [finalizarPlantaoOpen, setFinalizarPlantaoOpen] = useState(false);
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const pendenciasCount = 2;
 
   const notifications = [
@@ -97,7 +99,7 @@ export function AppHeader() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem><User className="mr-2 h-4 w-4" />Perfil</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/perfil")}><User className="mr-2 h-4 w-4" />Perfil</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onClick={logout}><LogOut className="mr-2 h-4 w-4" />Sair</DropdownMenuItem>
           </DropdownMenuContent>
