@@ -68,189 +68,21 @@ const WIDGETS: WidgetDef[] = [
   { id: "cl_tabela", modulo: "clientes", titulo: "Tabela de Clientes", tipo: "tabela" },
 ];
 
-// ── Mock data para todos os módulos ──
-
-const MOCK_DATA: Record<string, any> = {
-  oc_total: { valor: 185, label: "Total Ocorrências" },
-  oc_tipo: [
-    { name: "Socorro", value: 65, color: "#f97316" }, { name: "Quebra", value: 45, color: "#ef4444" },
-    { name: "Atraso", value: 35, color: "#eab308" }, { name: "Informação", value: 28, color: "#3b82f6" },
-  ],
-  oc_cliente: [
-    { cliente: "JEEP", total: 45 }, { cliente: "VILA GALÉ", total: 32 }, { cliente: "HDH", total: 28 },
-    { cliente: "CBA", total: 22 }, { cliente: "MONTE RODOVIAS", total: 18 },
-  ],
-  oc_evolucao: [
-    { mes: "Jan", ocorrencias: 120, atrasos: 15 }, { mes: "Fev", ocorrencias: 135, atrasos: 18 },
-    { mes: "Mar", ocorrencias: 128, atrasos: 12 }, { mes: "Abr", ocorrencias: 142, atrasos: 20 },
-    { mes: "Mai", ocorrencias: 138, atrasos: 16 }, { mes: "Jun", ocorrencias: 155, atrasos: 22 },
-  ],
-  oc_tabela: {
-    colunas: ["Data", "Cliente", "Tipo", "Veículo", "Status"],
-    linhas: [
-      ["25/01/2025", "JEEP", "SOCORRO", "#101256", "CONCLUIDO"],
-      ["25/01/2025", "VILA GALÉ", "QUEBRA", "#101318", "CONCLUIDO"],
-      ["24/01/2025", "HDH", "ATRASO", "#304", "CONCLUIDO"],
-    ],
-  },
-  av_total: { valor: 42, label: "Total Avarias" },
-  av_status: [
-    { name: "Pendente", value: 12, color: "#eab308" }, { name: "Cobrada", value: 18, color: "#ef4444" },
-    { name: "Abonada", value: 12, color: "#22c55e" },
-  ],
-  av_tabela: {
-    colunas: ["Data", "Veículo", "Motorista", "Tipo", "Valor"],
-    linhas: [
-      ["20/01/2025", "#101256", "João Silva", "Riscos", "R$ 800"],
-      ["18/01/2025", "#101318", "Carlos Souza", "Vidro quebrado", "R$ 1.200"],
-    ],
-  },
-  pt_entradas: { valor: 28, label: "Entradas/Saídas Hoje" },
-  pt_km: { valor: 342, label: "KM Morto Total (mês)" },
-  pt_tabela: {
-    colunas: ["Data", "Veículo", "Motorista", "Tipo", "KM Morto"],
-    linhas: [
-      ["25/01/2025", "#101256", "João Silva", "Saída", "65 km"],
-      ["25/01/2025", "#304", "Carlos Lima", "Entrada", "12 km"],
-    ],
-  },
-  ve_status: [
-    { name: "Em operação", value: 35, color: "#22c55e" }, { name: "Garagem", value: 12, color: "#3b82f6" },
-    { name: "Manutenção", value: 5, color: "#ef4444" },
-  ],
-  ve_tabela: {
-    colunas: ["Prefixo", "Placa", "Status", "KM Atual"],
-    linhas: [
-      ["101256", "ABC-1234", "EM OPERAÇÃO", "125.430"],
-      ["101318", "DEF-5678", "GARAGEM", "98.200"],
-    ],
-  },
-  mo_total: { valor: 48, label: "Motoristas Ativos" },
-  mo_cnh: { valor: 5, label: "CNH Vencendo (30 dias)" },
-  mo_tabela: {
-    colunas: ["Nome", "CNH", "Validade", "Status"],
-    linhas: [
-      ["João Silva", "123456789", "15/06/2025", "ATIVO"],
-      ["Carlos Souza", "987654321", "20/02/2025", "CNH VENCENDO"],
-    ],
-  },
-  ma_status: [
-    { tipo: "Abertas", total: 8 }, { tipo: "Concluídas", total: 22 },
-  ],
-  ma_tabela: {
-    colunas: ["Veículo", "Tipo", "Status", "Data"],
-    linhas: [
-      ["#101256", "Preventiva", "CONCLUÍDA", "20/01/2025"],
-      ["#304", "Corretiva", "ABERTA", "24/01/2025"],
-    ],
-  },
-  ab_litros: { valor: 12450, label: "Total Litros (mês)" },
-  ab_custo: { valor: "R$ 74.700", label: "Custo Total (mês)" },
-  ab_tabela: {
-    colunas: ["Data", "Veículo", "Litros", "Valor"],
-    linhas: [
-      ["25/01/2025", "#101256", "120L", "R$ 720"],
-      ["24/01/2025", "#304", "85L", "R$ 510"],
-    ],
-  },
-  cl_total: { valor: 4, label: "Total Clientes" },
-  cl_sla: [
-    { name: "Alto", value: 2, color: "#ef4444" }, { name: "Médio", value: 2, color: "#eab308" },
-  ],
-  cl_tabela: {
-    colunas: ["Empresa", "Responsável", "SLA", "Multa"],
-    linhas: [
-      ["JEEP", "Carlos Silva", "ALTO (2h)", "R$ 5.000"],
-      ["VILA GALÉ", "Maria Santos", "ALTO (3h)", "R$ 3.000"],
-    ],
-  },
-};
-
 // ── Componente de renderização de widget ──
 
 function RenderWidget({ widget, onRemove, onMoveUp, onMoveDown, isFirst, isLast }: {
   widget: WidgetDef; onRemove: () => void; onMoveUp: () => void; onMoveDown: () => void; isFirst: boolean; isLast: boolean;
 }) {
-  const data = MOCK_DATA[widget.id];
+  // Dados vazios - sistema deve buscar do banco
+  const data = null;
   const moduloInfo = MODULOS.find((m) => m.id === widget.modulo);
 
   const renderContent = () => {
-    switch (widget.tipo) {
-      case "numero":
-        return (
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-3xl font-bold">{typeof data?.valor === "number" ? data.valor.toLocaleString() : data?.valor}</p>
-              <p className="text-sm text-muted-foreground">{data?.label}</p>
-            </div>
-            <TrendingUp className="h-8 w-8 text-primary/30" />
-          </div>
-        );
-      case "grafico-pizza":
-        return (
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsPie>
-                <Pie data={data} cx="50%" cy="50%" labelLine={false} label={({ name, percent }: any) => `${name}: ${(percent * 100).toFixed(0)}%`} outerRadius={90} dataKey="value">
-                  {data?.map((entry: any, i: number) => <Cell key={i} fill={entry.color} />)}
-                </Pie>
-                <Tooltip />
-              </RechartsPie>
-            </ResponsiveContainer>
-          </div>
-        );
-      case "grafico-barras":
-        return (
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout={data?.[0]?.cliente ? "vertical" : "horizontal"}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                {data?.[0]?.cliente ? (
-                  <><XAxis type="number" /><YAxis type="category" dataKey="cliente" width={100} /><Bar dataKey="total" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} /></>
-                ) : (
-                  <><XAxis dataKey="tipo" /><YAxis /><Bar dataKey="total" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} /></>
-                )}
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        );
-      case "grafico-linha":
-        return (
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="mes" /><YAxis />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }} />
-                <Line type="monotone" dataKey="ocorrencias" stroke="hsl(var(--primary))" strokeWidth={2} name="Ocorrências" />
-                <Line type="monotone" dataKey="atrasos" stroke="hsl(var(--destructive))" strokeWidth={2} name="Atrasos" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        );
-      case "tabela":
-        return (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="data-table-header">
-                  {data?.colunas?.map((col: string) => <TableHead key={col}>{col}</TableHead>)}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data?.linhas?.map((row: string[], i: number) => (
-                  <TableRow key={i} className="data-table-row">
-                    {row.map((cell, j) => <TableCell key={j}>{cell}</TableCell>)}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        );
-      default:
-        return null;
-    }
+    return (
+      <div className="flex items-center justify-center py-8 text-muted-foreground">
+        <p>Sem dados disponíveis</p>
+      </div>
+    );
   };
 
   return (
@@ -341,11 +173,8 @@ export default function Relatorios() {
     }
     let csv = "\uFEFF";
     tabelaWidgets.forEach((w) => {
-      const data = MOCK_DATA[w.id];
       csv += `${w.titulo}\n`;
-      csv += data.colunas.join(";") + "\n";
-      data.linhas.forEach((row: string[]) => { csv += row.join(";") + "\n"; });
-      csv += "\n";
+      csv += "Sem dados\n\n";
     });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);

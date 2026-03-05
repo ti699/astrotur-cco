@@ -2,77 +2,6 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 
-// Mock de dados em memória para quando o banco não estiver disponível
-const mockStats = {
-  totalOcorrencias: 30,
-  atrasos: 4,
-  veiculosAtribuidos: 210,
-  tempoMedioAtendimento: '1 hora e 46 min',
-  ocorrenciasHoje: 1,
-  comparacaoMesAnterior: 12, // percentual
-  comparacaoAtrasos: -5 // percentual
-};
-
-const mockOcorrenciasPorDia = [
-  { data: '15/11', quantidade: 2 },
-  { data: '16/11', quantidade: 1 },
-  { data: '17/11', quantidade: 1 },
-  { data: '18/11', quantidade: 3 },
-  { data: '19/11', quantidade: 2 },
-  { data: '20/11', quantidade: 3 },
-  { data: '21/11', quantidade: 1 }
-];
-
-const mockTopTipos = [
-  { tipo: 'Suspensão', total: 12 },
-  { tipo: 'Motor', total: 7 },
-  { tipo: 'Lubrificação', total: 7 },
-  { tipo: 'Elétrica', total: 4 }
-];
-
-const mockUltimasOcorrencias = [
-  {
-    id: 1,
-    numero_ocorrencia: '005312',
-    cliente_nome: 'Hotel Mar Azul',
-    tipo_quebra: 'Suspensão',
-    data_ocorrencia: '2025-11-24T12:12:00',
-    status: 'pendente'
-  },
-  {
-    id: 2,
-    numero_ocorrencia: '005311',
-    cliente_nome: 'Pousada Sol Nascente',
-    tipo_quebra: 'Motor',
-    data_ocorrencia: '2025-11-24T10:30:00',
-    status: 'concluido'
-  },
-  {
-    id: 3,
-    numero_ocorrencia: '005310',
-    cliente_nome: 'Resort Paraíso',
-    tipo_quebra: 'Suspensão',
-    data_ocorrencia: '2025-11-23T15:45:00',
-    status: 'pendente'
-  },
-  {
-    id: 4,
-    numero_ocorrencia: '005309',
-    cliente_nome: 'Hotel Vista Mar',
-    tipo_quebra: 'Elétrica',
-    data_ocorrencia: '2025-11-23T09:20:00',
-    status: 'em_andamento'
-  },
-  {
-    id: 5,
-    numero_ocorrencia: '005308',
-    cliente_nome: 'Pousada Tropical',
-    tipo_quebra: 'Motor',
-    data_ocorrencia: '2025-11-22T14:10:00',
-    status: 'concluido'
-  }
-];
-
 // Resumo: Retorna counts gerais (stats + veículos por tipo) em um único endpoint
 router.get('/resumo', async (req, res) => {
   try {
@@ -182,11 +111,19 @@ router.get('/resumo', async (req, res) => {
           veiculosAtribuidos: veiculosUnicos.size,
           tempoMedioAtendimento: tempoMedioAtendimento,
           ocorrenciasHoje: ocorrenciasHoje,
-          comparacaoMesAnterior: 12,
-          comparacaoAtrasos: -5
+          comparacaoMesAnterior: 0,
+          comparacaoAtrasos: 0
         };
       } else {
-        stats = mockStats;
+        stats = {
+          totalOcorrencias: 0,
+          atrasos: 0,
+          veiculosAtribuidos: 0,
+          tempoMedioAtendimento: '0 horas e 0 min',
+          ocorrenciasHoje: 0,
+          comparacaoMesAnterior: 0,
+          comparacaoAtrasos: 0
+        };
       }
     }
 
@@ -239,8 +176,8 @@ router.get('/stats', async (req, res) => {
         veiculosAtribuidos: parseInt(veiculosResult.rows[0]?.total || 0),
         tempoMedioAtendimento: `${horas} hora${horas !== 1 ? 's' : ''} e ${minutos} min`,
         ocorrenciasHoje: parseInt(totalResult.rows[0]?.hoje || 0),
-        comparacaoMesAnterior: 12,
-        comparacaoAtrasos: -5
+        comparacaoMesAnterior: 0,
+        comparacaoAtrasos: 0
       };
     } catch (dbError) {
       // Se banco não disponível, usar memória ou mock
@@ -292,11 +229,19 @@ router.get('/stats', async (req, res) => {
           veiculosAtribuidos: veiculosUnicos.size,
           tempoMedioAtendimento: tempoMedioAtendimento,
           ocorrenciasHoje: ocorrenciasHoje,
-          comparacaoMesAnterior: 12,
-          comparacaoAtrasos: -5
+          comparacaoMesAnterior: 0,
+          comparacaoAtrasos: 0
         };
       } else {
-        stats = mockStats;
+        stats = {
+          totalOcorrencias: 0,
+          atrasos: 0,
+          veiculosAtribuidos: 0,
+          tempoMedioAtendimento: '0 horas e 0 min',
+          ocorrenciasHoje: 0,
+          comparacaoMesAnterior: 0,
+          comparacaoAtrasos: 0
+        };
       }
     }
 
