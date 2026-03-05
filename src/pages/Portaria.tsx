@@ -71,7 +71,7 @@ export default function Portaria() {
 
   const stats = useMemo(() => ({
     naGaragem: filteredEntradas.length,
-    emOperacao: 42 - filteredEntradas.length,
+    emOperacao: filteredSaidas.length,
     entradasHoje: filteredEntradas.length,
     saidasHoje: filteredSaidas.length,
   }), [filteredEntradas, filteredSaidas]);

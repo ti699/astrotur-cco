@@ -19,12 +19,7 @@ import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
 
-const initialMotoristas = [
-  { id: 1, nome: "Eduardo Pereira", matricula: "03486", cpf: "***.***.***-12", cnh: "A/D", cnhValidade: "15/08/2027", telefone: "(81) 99999-1234", status: "ATIVO", avarias: 2 },
-  { id: 2, nome: "Paulo Sérgio", matricula: "04521", cpf: "***.***.***-34", cnh: "D", cnhValidade: "20/03/2026", telefone: "(81) 99999-5678", status: "ATIVO", avarias: 0 },
-  { id: 3, nome: "Sandro Marques", matricula: "03892", cpf: "***.***.***-56", cnh: "D", cnhValidade: "10/01/2025", telefone: "(81) 99999-9012", status: "ATIVO", avarias: 3, cnhAlerta: true },
-  { id: 4, nome: "José Carlos", matricula: "05123", cpf: "***.***.***-78", cnh: "A/D", cnhValidade: "05/12/2026", telefone: "(81) 99999-3456", status: "FERIAS", avarias: 1 },
-];
+const initialMotoristas: any[] = [];
 
 const getStatusBadge = (status: string) => {
   const map: Record<string, string> = { ATIVO: "bg-green-100 text-green-800", FERIAS: "bg-blue-100 text-blue-800", AFASTADO: "bg-amber-100 text-amber-800", DESLIGADO: "bg-gray-100 text-gray-800" };
@@ -63,10 +58,10 @@ export default function Motoristas() {
     ferias: filtered.filter((m) => m.status === "FERIAS").length,
   }), [filtered]);
 
-  const handleVerHistorico = (m: typeof initialMotoristas[0]) => { setMotoristaSelecionado({ id: m.id.toString(), nome: m.nome, matricula: m.matricula }); setHistoricoOpen(true); };
-  const handleView = (m: typeof initialMotoristas[0]) => { setSelected(m); setDetalhesOpen(true); };
-  const handleEdit = (m: typeof initialMotoristas[0]) => { setSelected(m); setEditForm({ nome: m.nome, telefone: m.telefone, status: m.status }); setEditOpen(true); };
-  const handleDelete = (m: typeof initialMotoristas[0]) => { setSelected(m); setExcluirOpen(true); };
+  const handleVerHistorico = (m: any) => { setMotoristaSelecionado({ id: m.id.toString(), nome: m.nome, matricula: m.matricula }); setHistoricoOpen(true); };
+  const handleView = (m: any) => { setSelected(m); setDetalhesOpen(true); };
+  const handleEdit = (m: any) => { setSelected(m); setEditForm({ nome: m.nome, telefone: m.telefone, status: m.status }); setEditOpen(true); };
+  const handleDelete = (m: any) => { setSelected(m); setExcluirOpen(true); };
 
   const confirmNovo = () => {
     const novo = {
