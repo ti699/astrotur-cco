@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus, Search, MoreHorizontal, Eye, Edit, Wrench, Clock, CheckCircle, AlertTriangle, FileText, Upload,
 } from "lucide-react";
@@ -16,6 +16,7 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/services/api";
 
 type ManutencaoStatus = "ABERTA" | "EM_ANDAMENTO" | "CONCLUIDA";
 
@@ -32,12 +33,6 @@ interface Manutencao {
   kmEntrada: number;
 }
 
-const initialManutencoes: Manutencao[] = [
-  { id: 1, veiculo: "121904", tipo: "Preventiva", descricao: "Troca de óleo e filtros", dataAbertura: "2026-02-08", responsavel: "Oficina Central", status: "EM_ANDAMENTO", kmEntrada: 245680 },
-  { id: 2, veiculo: "2536", tipo: "Corretiva", descricao: "Regular freios traseiros", dataAbertura: "2026-02-07", dataConclusao: "2026-02-09", responsavel: "Oficina Central", status: "CONCLUIDA", custo: 850, kmEntrada: 89230 },
-  { id: 3, veiculo: "102104", tipo: "Corretiva", descricao: "Sistema elétrico - painel", dataAbertura: "2026-02-10", responsavel: "Eletricista José", status: "ABERTA", kmEntrada: 312450 },
-];
-
 const getStatusBadge = (status: ManutencaoStatus) => {
   const map = {
     ABERTA: { cls: "bg-red-100 text-red-800", label: "Aberta", icon: AlertTriangle },
@@ -52,6 +47,7 @@ const getStatusBadge = (status: ManutencaoStatus) => {
 export default function Manutencao() {
   const { toast } = useToast();
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [novaOpen, setNovaOpen] = useState(false);
@@ -59,6 +55,23 @@ export default function Manutencao() {
   const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<Manutencao | null>(null);
   const [form, setForm] = useState({ veiculo: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
+
+  // Carregar manutenções do backend
+  useEffect(() => {
+    const carregarManutencoes = async () => {
+      try {
+        setLoading(true);
+        const response = await api.get('/manutencoes');
+        setManutencoes(response.data || []);
+      } catch (error) {
+        console.error('Erro ao carregar manutenções:', error);
+        setManutencoes([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    carregarManutencoes();
+  }, []);
 
   const filtered = useMemo(() => {
     return manutencoes.filter((m) => {
@@ -75,31 +88,50 @@ export default function Manutencao() {
     concluidas: filtered.filter((m) => m.status === "CONCLUIDA").length,
   }), [filtered]);
 
-  const handleCriar = () => {
-    const nova: Manutencao = {
-      id: Date.now(),
-      veiculo: form.veiculo,
-      tipo: form.tipo,
-      descricao: form.descricao,
-      dataAbertura: new Date().toISOString().split("T")[0],
-      responsavel: form.responsavel,
-      status: "ABERTA",
-      kmEntrada: parseInt(form.kmEntrada) || 0,
-    };
-    setManutencoes((prev) => [nova, ...prev]);
-    toast({ title: "Manutenção registrada!", description: `Veículo #${form.veiculo} enviado para manutenção.` });
-    setNovaOpen(false);
-    setForm({ veiculo: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
+  const handleCriar = async () => {
+    try {
+      const response = await api.post('/manutencoes', {
+        veiculo: form.veiculo,
+        tipo: form.tipo,
+        descricao: form.descricao,
+        responsavel: form.responsavel,
+        kmEntrada: parseInt(form.kmEntrada) || 0,
+      });
+      setManutencoes((prev) => [response.data, ...prev]);
+      toast({ title: "Manutenção registrada!", description: `Veículo #${form.veiculo} enviado para manutenção.` });
+      setNovaOpen(false);
+      setForm({ veiculo: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
+    } catch (error) {
+      toast({ title: "Erro ao criar manutenção", variant: "destructive" });
+      console.error(error);
+    }
   };
 
-  const handleConcluir = (m: Manutencao) => {
-    setManutencoes((prev) => prev.map((x) => x.id === m.id ? { ...x, status: "CONCLUIDA" as ManutencaoStatus, dataConclusao: new Date().toISOString().split("T")[0] } : x));
-    toast({ title: "Manutenção concluída!", description: `Veículo #${m.veiculo} liberado.` });
+  const handleConcluir = async (m: Manutencao) => {
+    try {
+      const response = await api.patch(`/manutencoes/${m.id}`, {
+        status: "CONCLUIDA",
+        dataConclusao: new Date().toISOString().split("T")[0],
+      });
+      setManutencoes((prev) => prev.map((x) => x.id === m.id ? response.data : x));
+      toast({ title: "Manutenção concluída!", description: `Veículo #${m.veiculo} liberado.` });
+    } catch (error) {
+      toast({ title: "Erro ao concluir manutenção", variant: "destructive" });
+      console.error(error);
+    }
   };
 
-  const handleIniciar = (m: Manutencao) => {
-    setManutencoes((prev) => prev.map((x) => x.id === m.id ? { ...x, status: "EM_ANDAMENTO" as ManutencaoStatus } : x));
-    toast({ title: "Manutenção iniciada", description: `Veículo #${m.veiculo} em manutenção.` });
+  const handleIniciar = async (m: Manutencao) => {
+    try {
+      const response = await api.patch(`/manutencoes/${m.id}`, {
+        status: "EM_ANDAMENTO",
+      });
+      setManutencoes((prev) => prev.map((x) => x.id === m.id ? response.data : x));
+      toast({ title: "Manutenção iniciada", description: `Veículo #${m.veiculo} em manutenção.` });
+    } catch (error) {
+      toast({ title: "Erro ao iniciar manutenção", variant: "destructive" });
+      console.error(error);
+    }
   };
 
   const handleView = (m: Manutencao) => { setSelected(m); setDetalhesOpen(true); };

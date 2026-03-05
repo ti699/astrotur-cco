@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus, Search, MoreHorizontal, Eye, Fuel, Clock, CheckCircle, FileText, Upload, TrendingUp,
 } from "lucide-react";
@@ -15,6 +15,7 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/services/api";
 
 interface Abastecimento {
   id: number;
@@ -29,15 +30,10 @@ interface Abastecimento {
   retornou: boolean;
 }
 
-const initialAbastecimentos: Abastecimento[] = [
-  { id: 1, veiculo: "121904", motorista: "Eduardo Pereira", data: "2026-02-10", litros: 120, tipoCombustivel: "Diesel S10", kmAtual: 245800, posto: "Posto Shell BR-101", valor: 720, retornou: true },
-  { id: 2, veiculo: "102104", motorista: "Paulo Sérgio", data: "2026-02-09", litros: 150, tipoCombustivel: "Diesel S10", kmAtual: 312600, posto: "Posto Ipiranga Suape", valor: 900, retornou: true },
-  { id: 3, veiculo: "2536", motorista: "Sandro Marques", data: "2026-02-10", litros: 80, tipoCombustivel: "Diesel S500", kmAtual: 89350, posto: "Posto BR Recife", valor: 440, retornou: false },
-];
-
 export default function Abastecimento() {
   const { toast } = useToast();
   const [abastecimentos, setAbastecimentos] = useState<Abastecimento[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [retornoFilter, setRetornoFilter] = useState("all");
   const [novaOpen, setNovaOpen] = useState(false);
@@ -45,6 +41,23 @@ export default function Abastecimento() {
   const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<Abastecimento | null>(null);
   const [form, setForm] = useState({ veiculo: "", motorista: "", litros: "", tipoCombustivel: "Diesel S10", kmAtual: "", posto: "", valor: "" });
+
+  // Carregar abastecimentos do backend
+  useEffect(() => {
+    const carregarAbastecimentos = async () => {
+      try {
+        setLoading(true);
+        const response = await api.get('/abastecimentos');
+        setAbastecimentos(response.data || []);
+      } catch (error) {
+        console.error('Erro ao carregar abastecimentos:', error);
+        setAbastecimentos([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    carregarAbastecimentos();
+  }, []);
 
   const filtered = useMemo(() => {
     return abastecimentos.filter((a) => {
@@ -61,28 +74,38 @@ export default function Abastecimento() {
     pendentes: filtered.filter((a) => !a.retornou).length,
   }), [filtered]);
 
-  const handleCriar = () => {
-    const novo: Abastecimento = {
-      id: Date.now(),
-      veiculo: form.veiculo,
-      motorista: form.motorista,
-      data: new Date().toISOString().split("T")[0],
-      litros: parseFloat(form.litros) || 0,
-      tipoCombustivel: form.tipoCombustivel,
-      kmAtual: parseInt(form.kmAtual) || 0,
-      posto: form.posto,
-      valor: parseFloat(form.valor) || 0,
-      retornou: false,
-    };
-    setAbastecimentos((prev) => [novo, ...prev]);
-    toast({ title: "Abastecimento registrado!", description: `Veículo #${form.veiculo}` });
-    setNovaOpen(false);
-    setForm({ veiculo: "", motorista: "", litros: "", tipoCombustivel: "Diesel S10", kmAtual: "", posto: "", valor: "" });
+  const handleCriar = async () => {
+    try {
+      const response = await api.post('/abastecimentos', {
+        veiculo: form.veiculo,
+        motorista: form.motorista,
+        litros: parseFloat(form.litros),
+        tipoCombustivel: form.tipoCombustivel,
+        kmAtual: parseInt(form.kmAtual),
+        posto: form.posto,
+        valor: parseFloat(form.valor),
+      });
+      setAbastecimentos((prev) => [response.data, ...prev]);
+      toast({ title: "Abastecimento registrado!", description: `Veículo #${form.veiculo}` });
+      setNovaOpen(false);
+      setForm({ veiculo: "", motorista: "", litros: "", tipoCombustivel: "Diesel S10", kmAtual: "", posto: "", valor: "" });
+    } catch (error) {
+      toast({ title: "Erro ao criar abastecimento", variant: "destructive" });
+      console.error(error);
+    }
   };
 
-  const handleRetorno = (a: Abastecimento) => {
-    setAbastecimentos((prev) => prev.map((x) => x.id === a.id ? { ...x, retornou: true } : x));
-    toast({ title: "Retorno confirmado!", description: `Veículo #${a.veiculo} retornou do abastecimento.` });
+  const handleRetorno = async (a: Abastecimento) => {
+    try {
+      const response = await api.patch(`/abastecimentos/${a.id}`, {
+        retornou: true,
+      });
+      setAbastecimentos((prev) => prev.map((x) => x.id === a.id ? response.data : x));
+      toast({ title: "Retorno confirmado!", description: `Veículo #${a.veiculo} retornou do abastecimento.` });
+    } catch (error) {
+      toast({ title: "Erro ao confirmar retorno", variant: "destructive" });
+      console.error(error);
+    }
   };
 
   const handleView = (a: Abastecimento) => { setSelected(a); setDetalhesOpen(true); };

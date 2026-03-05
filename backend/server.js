@@ -55,6 +55,8 @@ app.use('/api/ocorrencias', require('./routes/ocorrencias'));
 app.use('/api/clientes', require('./routes/clientes'));
 app.use('/api/veiculos', require('./routes/veiculos'));
 app.use('/api/usuarios', require('./routes/usuarios'));
+app.use('/api/manutencoes', require('./routes/manutencoes'));
+app.use('/api/abastecimentos', require('./routes/abastecimentos'));
 app.use('/api/relatorios', require('./routes/relatorios'));
 
 // Health check
