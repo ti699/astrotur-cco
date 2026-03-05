@@ -57,6 +57,8 @@ app.use('/api/veiculos', require('./routes/veiculos'));
 app.use('/api/usuarios', require('./routes/usuarios'));
 app.use('/api/manutencoes', require('./routes/manutencoes'));
 app.use('/api/abastecimentos', require('./routes/abastecimentos'));
+app.use('/api/avarias', require('./routes/avarias'));
+app.use('/api/banco-distancias', require('./routes/banco-distancias'));
 app.use('/api/relatorios', require('./routes/relatorios'));
 
 // Health check

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Search, Edit, Trash2, Route, ArrowLeftRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/services/api";
 
 export interface RotaDistancia {
   id: string;
@@ -14,17 +15,6 @@ export interface RotaDistancia {
   destino: string;
   distanciaKm: number;
 }
-
-export const bancoDistancias: RotaDistancia[] = [
-  { id: "1", origem: "Recife (Garagem)", destino: "Porto de Galinhas", distanciaKm: 65 },
-  { id: "2", origem: "Recife (Garagem)", destino: "Olinda", distanciaKm: 12 },
-  { id: "3", origem: "Recife (Garagem)", destino: "Paulista", distanciaKm: 18 },
-  { id: "4", origem: "Recife (Garagem)", destino: "Suape", distanciaKm: 45 },
-  { id: "5", origem: "Porto de Galinhas", destino: "Olinda", distanciaKm: 70 },
-  { id: "6", origem: "Recife (Garagem)", destino: "Goiana", distanciaKm: 62 },
-  { id: "7", origem: "Recife (Garagem)", destino: "Cabo de Santo Agostinho", distanciaKm: 35 },
-  { id: "8", origem: "Recife (Garagem)", destino: "Ipojuca", distanciaKm: 50 },
-];
 
 export function buscarDistancia(origem: string, destino: string, rotas: RotaDistancia[]): number | null {
   const rota = rotas.find(
@@ -37,11 +27,28 @@ export function buscarDistancia(origem: string, destino: string, rotas: RotaDist
 
 export default function BancoDistancias() {
   const { toast } = useToast();
-  const [rotas, setRotas] = useState<RotaDistancia[]>(bancoDistancias);
+  const [rotas, setRotas] = useState<RotaDistancia[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRota, setEditingRota] = useState<RotaDistancia | null>(null);
   const [form, setForm] = useState({ origem: "", destino: "", distanciaKm: "" });
+
+  // Load rotas from backend
+  useEffect(() => {
+    const fetchRotas = async () => {
+      try {
+        const response = await api.get("/banco-distancias");
+        setRotas(response.data || []);
+      } catch (error) {
+        console.error("Erro ao carregar rotas:", error);
+        setRotas([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRotas();
+  }, []);
 
   const filtered = rotas.filter(
     (r) =>
@@ -49,27 +56,35 @@ export default function BancoDistancias() {
       r.destino.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingRota) {
-      setRotas((prev) =>
-        prev.map((r) =>
-          r.id === editingRota.id
-            ? { ...r, origem: form.origem, destino: form.destino, distanciaKm: parseFloat(form.distanciaKm) || 0 }
-            : r
-        )
-      );
-      toast({ title: "Rota atualizada!" });
-    } else {
-      setRotas((prev) => [
-        ...prev,
-        { id: Date.now().toString(), origem: form.origem, destino: form.destino, distanciaKm: parseFloat(form.distanciaKm) || 0 },
-      ]);
-      toast({ title: "Rota cadastrada!" });
+    try {
+      if (editingRota) {
+        const response = await api.patch(`/banco-distancias/${editingRota.id}`, {
+          origem: form.origem,
+          destino: form.destino,
+          distanciaKm: parseFloat(form.distanciaKm),
+        });
+        setRotas((prev) =>
+          prev.map((r) => r.id === editingRota.id ? response.data : r)
+        );
+        toast({ title: "Rota atualizada!" });
+      } else {
+        const response = await api.post("/banco-distancias", {
+          origem: form.origem,
+          destino: form.destino,
+          distanciaKm: parseFloat(form.distanciaKm),
+        });
+        setRotas((prev) => [response.data, ...prev]);
+        toast({ title: "Rota cadastrada!" });
+      }
+      setModalOpen(false);
+      setEditingRota(null);
+      setForm({ origem: "", destino: "", distanciaKm: "" });
+    } catch (error) {
+      console.error("Erro ao salvar rota:", error);
+      toast({ title: "Erro", description: "Falha ao salvar rota", variant: "destructive" });
     }
-    setModalOpen(false);
-    setEditingRota(null);
-    setForm({ origem: "", destino: "", distanciaKm: "" });
   };
 
   const handleEdit = (r: RotaDistancia) => {
@@ -78,9 +93,15 @@ export default function BancoDistancias() {
     setModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    setRotas((prev) => prev.filter((r) => r.id !== id));
-    toast({ title: "Rota excluída" });
+  const handleDelete = async (id: string) => {
+    try {
+      await api.delete(`/banco-distancias/${id}`);
+      setRotas((prev) => prev.filter((r) => r.id !== id));
+      toast({ title: "Rota excluída" });
+    } catch (error) {
+      console.error("Erro ao deletar rota:", error);
+      toast({ title: "Erro", description: "Falha ao deletar rota", variant: "destructive" });
+    }
   };
 
   const openNew = () => {

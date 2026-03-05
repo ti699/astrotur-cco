@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus, Search, Download, Upload, MoreHorizontal, Eye, FileText, CheckCircle, Clock, AlertTriangle, DollarSign, Camera,
 } from "lucide-react";
@@ -19,13 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-
-const initialAvarias = [
-  { id: 1, numeroTalao: "DAI-133", data: "10/10/2026", veiculo: "2536", motorista: "SANDRO MARQUES", tipoAvaria: "CURVÃO", localVeiculo: "Traseiro lado direito", valorEstimado: 383.50, status: "PRECIFICADO", daiPreenchido: true },
-  { id: 2, numeroTalao: "DAI-132", data: "08/10/2026", veiculo: "121904", motorista: "EDUARDO PEREIRA", tipoAvaria: "COLISÃO", localVeiculo: "Lateral esquerda", valorEstimado: 1250.00, status: "AGUARDANDO_DAI", daiPreenchido: false },
-  { id: 3, numeroTalao: "DAI-131", data: "05/10/2026", veiculo: "101318", motorista: "JOSÉ CARLOS", tipoAvaria: "VIDRO", localVeiculo: "Janela traseira", valorEstimado: 450.00, status: "JULGADO_COBRADO", daiPreenchido: true, decisao: "COBRADO", percentualDesconto: 30 },
-  { id: 4, numeroTalao: "DAI-130", data: "01/10/2026", veiculo: "102104", motorista: "PAULO SÉRGIO", tipoAvaria: "LATARIA", localVeiculo: "Para-choque dianteiro", valorEstimado: 890.00, status: "JULGADO_ABONADO", daiPreenchido: true, decisao: "ABONADO" },
-];
+import { api } from "@/services/api";
 
 const getStatusBadge = (status: string) => {
   const map: Record<string, { label: string; cls: string; icon: typeof Clock }> = {
@@ -54,8 +48,25 @@ export default function Avarias() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [workflowOpen, setWorkflowOpen] = useState(false);
-  const [avarias, setAvarias] = useState<typeof initialAvarias>([]);
+  const [avarias, setAvarias] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
+
+  // Load avarias from backend
+  useEffect(() => {
+    const fetchAvarias = async () => {
+      try {
+        const response = await api.get("/avarias");
+        setAvarias(response.data || []);
+      } catch (error) {
+        console.error("Erro ao carregar avarias:", error);
+        setAvarias([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAvarias();
+  }, []);
 
   // Dossiê modal
   const [dossieOpen, setDossieOpen] = useState(false);
@@ -93,19 +104,38 @@ export default function Avarias() {
   const handlePrecificar = (a: typeof initialAvarias[0]) => { setSelectedAvaria(a); setValorPrecificacao(a.valorEstimado.toString()); setPrecificarOpen(true); };
   const handleJulgar = (a: typeof initialAvarias[0]) => { setSelectedAvaria(a); setJulgarOpen(true); };
 
-  const confirmPrecificar = () => {
+  const confirmPrecificar = async () => {
     if (!selectedAvaria) return;
-    setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? { ...a, valorEstimado: parseFloat(valorPrecificacao) || 0, status: "PRECIFICADO" } : a));
-    toast({ title: "Precificação salva!", description: `${selectedAvaria.numeroTalao} precificado.` });
-    setPrecificarOpen(false);
+    try {
+      const response = await api.patch(`/avarias/${selectedAvaria.id}`, {
+        status: "PRECIFICADO",
+        valorEstimado: parseFloat(valorPrecificacao) || 0,
+      });
+      setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? response.data : a));
+      toast({ title: "Precificação salva!", description: `${selectedAvaria.numeroTalao} precificado.` });
+      setPrecificarOpen(false);
+    } catch (error) {
+      console.error("Erro ao precificar:", error);
+      toast({ title: "Erro", description: "Falha ao salvar precificação", variant: "destructive" });
+    }
   };
 
-  const confirmJulgar = () => {
+  const confirmJulgar = async () => {
     if (!selectedAvaria) return;
     const newStatus = decisao === "COBRADO" ? "JULGADO_COBRADO" : "JULGADO_ABONADO";
-    setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? { ...a, status: newStatus, decisao, percentualDesconto: parseInt(percentual) } : a));
-    toast({ title: "Julgamento registrado!", description: `${selectedAvaria.numeroTalao} - ${decisao}` });
-    setJulgarOpen(false);
+    try {
+      const response = await api.patch(`/avarias/${selectedAvaria.id}`, {
+        status: newStatus,
+        decisao,
+        percentualDesconto: parseInt(percentual),
+      });
+      setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? response.data : a));
+      toast({ title: "Julgamento registrado!", description: `${selectedAvaria.numeroTalao} - ${decisao}` });
+      setJulgarOpen(false);
+    } catch (error) {
+      console.error("Erro ao julgar:", error);
+      toast({ title: "Erro", description: "Falha ao salvar julgamento", variant: "destructive" });
+    }
   };
 
   const handleRelatorio = async () => {
