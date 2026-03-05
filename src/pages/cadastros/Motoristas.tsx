@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus, Search, Download, Upload, MoreHorizontal, Eye, Edit, Trash2, Users, AlertTriangle, History, FileText,
 } from "lucide-react";
@@ -18,6 +18,7 @@ import { ConfirmarExclusaoDialog } from "@/components/shared/ConfirmarExclusaoDi
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/services/api";
 
 const initialMotoristas: any[] = [];
 
@@ -30,6 +31,7 @@ const getStatusBadge = (status: string) => {
 export default function Motoristas() {
   const { toast } = useToast();
   const [motoristas, setMotoristas] = useState(initialMotoristas);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [historicoOpen, setHistoricoOpen] = useState(false);
@@ -42,6 +44,22 @@ export default function Motoristas() {
   const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ nome: "", telefone: "", status: "" });
+
+  // Load motoristas from backend
+  useEffect(() => {
+    const fetchMotoristas = async () => {
+      try {
+        const response = await api.get('/motoristas');
+        setMotoristas(response.data || []);
+      } catch (error) {
+        console.error('Erro ao carregar motoristas:', error);
+        setMotoristas([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMotoristas();
+  }, []);
 
   const filtered = useMemo(() => {
     return motoristas.filter((m) => {
@@ -63,34 +81,55 @@ export default function Motoristas() {
   const handleEdit = (m: any) => { setSelected(m); setEditForm({ nome: m.nome, telefone: m.telefone, status: m.status }); setEditOpen(true); };
   const handleDelete = (m: any) => { setSelected(m); setExcluirOpen(true); };
 
-  const confirmNovo = () => {
-    const novo = {
-      id: Date.now(),
-      nome: novoForm.nome,
-      matricula: novoForm.matricula,
-      cpf: novoForm.cpf || "***.***.***-00",
-      cnh: novoForm.cnh,
-      cnhValidade: novoForm.cnhValidade,
-      telefone: novoForm.telefone,
-      status: novoForm.status,
-      avarias: 0,
-    };
-    setMotoristas((prev) => [novo, ...prev]);
-    toast({ title: "Motorista cadastrado!", description: novoForm.nome });
-    setNovoOpen(false);
-    setNovoForm({ nome: "", matricula: "", cpf: "", cnh: "D", cnhValidade: "", telefone: "", status: "ATIVO" });
+  const confirmNovo = async () => {
+    try {
+      const response = await api.post('/motoristas', {
+        nome: novoForm.nome,
+        matricula: novoForm.matricula,
+        cpf: novoForm.cpf,
+        cnh: novoForm.cnh,
+        cnhValidade: novoForm.cnhValidade,
+        telefone: novoForm.telefone,
+        status: novoForm.status,
+      });
+      setMotoristas((prev) => [response.data, ...prev]);
+      toast({ title: "Motorista cadastrado!", description: novoForm.nome });
+      setNovoOpen(false);
+      setNovoForm({ nome: "", matricula: "", cpf: "", cnh: "D", cnhValidade: "", telefone: "", status: "ATIVO" });
+    } catch (error) {
+      console.error("Erro ao cadastrar motorista:", error);
+      toast({ title: "Erro", description: "Falha ao cadastrar motorista", variant: "destructive" });
+    }
   };
 
-  const confirmEdit = () => {
+  const confirmEdit = async () => {
     if (!selected) return;
-    setMotoristas((prev) => prev.map((m) => m.id === selected.id ? { ...m, nome: editForm.nome, telefone: editForm.telefone, status: editForm.status } : m));
-    toast({ title: "Motorista atualizado!" }); setEditOpen(false);
+    try {
+      const response = await api.patch(`/motoristas/${selected.id}`, {
+        nome: editForm.nome,
+        telefone: editForm.telefone,
+        status: editForm.status,
+      });
+      setMotoristas((prev) => prev.map((m) => m.id === selected.id ? response.data : m));
+      toast({ title: "Motorista atualizado!" });
+      setEditOpen(false);
+    } catch (error) {
+      console.error("Erro ao atualizar motorista:", error);
+      toast({ title: "Erro", description: "Falha ao atualizar motorista", variant: "destructive" });
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!selected) return;
-    setMotoristas((prev) => prev.map((m) => m.id === selected.id ? { ...m, status: "DESLIGADO" } : m));
-    toast({ title: "Motorista desativado" }); setExcluirOpen(false);
+    try {
+      const response = await api.delete(`/motoristas/${selected.id}`);
+      setMotoristas((prev) => prev.map((m) => m.id === selected.id ? response.data : m));
+      toast({ title: "Motorista desativado" });
+      setExcluirOpen(false);
+    } catch (error) {
+      console.error("Erro ao desativar motorista:", error);
+      toast({ title: "Erro", description: "Falha ao desativar motorista", variant: "destructive" });
+    }
   };
 
   const handleRelatorio = async () => {
