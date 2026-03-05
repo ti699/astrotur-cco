@@ -70,7 +70,7 @@ export default function Avarias() {
 
   // Dossiê modal
   const [dossieOpen, setDossieOpen] = useState(false);
-  const [selectedAvaria, setSelectedAvaria] = useState<typeof initialAvarias[0] | null>(null);
+  const [selectedAvaria, setSelectedAvaria] = useState<any | null>(null);
 
   // Precificar modal
   const [precificarOpen, setPrecificarOpen] = useState(false);
@@ -100,9 +100,9 @@ export default function Avarias() {
     valorAbonado: filtered.filter((a) => a.status === "JULGADO_ABONADO").reduce((s, a) => s + a.valorEstimado, 0),
   }), [filtered]);
 
-  const handleDossie = (a: typeof initialAvarias[0]) => { setSelectedAvaria(a); setDossieOpen(true); };
-  const handlePrecificar = (a: typeof initialAvarias[0]) => { setSelectedAvaria(a); setValorPrecificacao(a.valorEstimado.toString()); setPrecificarOpen(true); };
-  const handleJulgar = (a: typeof initialAvarias[0]) => { setSelectedAvaria(a); setJulgarOpen(true); };
+  const handleDossie = (a: any) => { setSelectedAvaria(a); setDossieOpen(true); };
+  const handlePrecificar = (a: any) => { setSelectedAvaria(a); setValorPrecificacao(a.valorEstimado.toString()); setPrecificarOpen(true); };
+  const handleJulgar = (a: any) => { setSelectedAvaria(a); setJulgarOpen(true); };
 
   const confirmPrecificar = async () => {
     if (!selectedAvaria) return;

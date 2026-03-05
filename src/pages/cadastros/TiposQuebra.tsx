@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus,
   Search,
@@ -29,6 +29,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/services/api";
 
 interface TipoQuebra {
   id: number;
@@ -37,76 +38,18 @@ interface TipoQuebra {
   ativo: boolean;
   createdAt: string;
 }
+const mockTipos: TipoQuebra[] = [];
 
-const mockTipos: TipoQuebra[] = [
-  {
-    id: 1,
-    nome: "Suspensão",
-    descricao: "Problemas relacionados à suspensão do veículo",
-    ativo: true,
-    createdAt: "2025-01-15",
-  },
-  {
-    id: 2,
-    nome: "Motor",
-    descricao: "Problemas relacionados ao motor",
-    ativo: true,
-    createdAt: "2025-01-15",
-  },
-  {
-    id: 3,
-    nome: "Elétrica",
-    descricao: "Problemas no sistema elétrico",
-    ativo: true,
-    createdAt: "2025-01-15",
-  },
-  {
-    id: 4,
-    nome: "Lubrificação",
-    descricao: "Problemas de lubrificação",
-    ativo: true,
-    createdAt: "2025-01-15",
-  },
-  {
-    id: 5,
-    nome: "Freios",
-    descricao: "Problemas no sistema de freios",
-    ativo: true,
-    createdAt: "2025-01-15",
-  },
-  {
-    id: 6,
-    nome: "Pneus",
-    descricao: "Problemas com pneus (furos, desgaste, etc)",
-    ativo: true,
-    createdAt: "2025-01-15",
-  },
-  {
-    id: 7,
-    nome: "Ar Condicionado",
-    descricao: "Problemas com o sistema de ar condicionado",
-    ativo: true,
-    createdAt: "2025-01-20",
-  },
-  {
-    id: 8,
-    nome: "Câmbio",
-    descricao: "Problemas na caixa de câmbio",
-    ativo: true,
-    createdAt: "2025-01-22",
-  },
-  {
-    id: 9,
-    nome: "Outros",
-    descricao: "Outros tipos de ocorrências",
-    ativo: true,
-    createdAt: "2025-01-15",
-  },
-];
+const getStatusBadge = (status: string) => {
+  const map: Record<string, string> = { ATIVO: "bg-green-100 text-green-800", FERIAS: "bg-blue-100 text-blue-800", AFASTADO: "bg-amber-100 text-amber-800", DESLIGADO: "bg-gray-100 text-gray-800" };
+  const labels: Record<string, string> = { ATIVO: "Ativo", FERIAS: "Férias", AFASTADO: "Afastado", DESLIGADO: "Desligado" };
+  return <Badge className={`${map[status] || ""} hover:${map[status] || ""}`}>{labels[status] || status}</Badge>;
+};
 
 export default function TiposQuebra() {
   const { toast } = useToast();
-  const [tipos, setTipos] = useState<TipoQuebra[]>(mockTipos);
+  const [tipos, setTipos] = useState<TipoQuebra[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTipo, setEditingTipo] = useState<TipoQuebra | null>(null);
@@ -116,39 +59,59 @@ export default function TiposQuebra() {
     ativo: true,
   });
 
+  // Load tipos from backend
+  useEffect(() => {
+    const fetchTipos = async () => {
+      try {
+        const response = await api.get('/tipos-quebra');
+        setTipos(response.data || []);
+      } catch (error) {
+        console.error('Erro ao carregar tipos:', error);
+        setTipos([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTipos();
+  }, []);
+
   const filteredTipos = tipos.filter(
     (tipo) =>
       tipo.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       tipo.descricao.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingTipo) {
-      setTipos((prev) =>
-        prev.map((t) =>
-          t.id === editingTipo.id
-            ? { ...t, ...formData }
-            : t
-        )
-      );
-      toast({
-        title: "Tipo atualizado!",
-        description: `${formData.nome} foi atualizado com sucesso.`,
-      });
-    } else {
-      const newTipo: TipoQuebra = {
-        id: Math.max(...tipos.map((t) => t.id)) + 1,
-        ...formData,
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setTipos((prev) => [...prev, newTipo]);
-      toast({
-        title: "Tipo cadastrado!",
-        description: `${formData.nome} foi adicionado com sucesso.`,
-      });
+    try {
+      if (editingTipo) {
+        const response = await api.patch(`/tipos-quebra/${editingTipo.id}`, formData);
+        setTipos((prev) =>
+          prev.map((t) =>
+            t.id === editingTipo.id ? response.data : t
+          )
+        );
+        toast({
+          title: "Tipo atualizado!",
+          description: `${formData.nome} foi atualizado com sucesso.`,
+        });
+      } else {
+        const response = await api.post('/tipos-quebra', formData);
+        setTipos((prev) => [...prev, response.data]);
+        toast({
+          title: "Tipo cadastrado!",
+          description: `${formData.nome} foi adicionado com sucesso.`,
+        });
+      }
+      setModalOpen(false);
+      setEditingTipo(null);
+      setFormData({ nome: "", descricao: "", ativo: true });
+    } catch (error) {
+      console.error("Erro ao salvar tipo:", error);
+      toast({ title: "Erro", description: "Falha ao salvar tipo", variant: "destructive" });
     }
+  };
     
     setModalOpen(false);
     setEditingTipo(null);
@@ -165,18 +128,30 @@ export default function TiposQuebra() {
     setModalOpen(true);
   };
 
-  const handleDelete = (id: number) => {
-    setTipos((prev) => prev.filter((t) => t.id !== id));
-    toast({
-      title: "Tipo excluído",
-      description: "O tipo de quebra foi removido com sucesso.",
-    });
+  const handleDelete = async (id: number) => {
+    try {
+      await api.delete(`/tipos-quebra/${id}`);
+      setTipos((prev) => prev.filter((t) => t.id !== id));
+      toast({
+        title: "Tipo excluído",
+        description: "O tipo de quebra foi removido com sucesso.",
+      });
+    } catch (error) {
+      console.error("Erro ao deletar tipo:", error);
+      toast({ title: "Erro", description: "Falha ao deletar tipo", variant: "destructive" });
+    }
   };
 
-  const handleToggleAtivo = (id: number) => {
-    setTipos((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ativo: !t.ativo } : t))
-    );
+  const handleToggleAtivo = async (tipo: TipoQuebra) => {
+    try {
+      const response = await api.patch(`/tipos-quebra/${tipo.id}`, { ativo: !tipo.ativo });
+      setTipos((prev) =>
+        prev.map((t) => (t.id === tipo.id ? response.data : t))
+      );
+    } catch (error) {
+      console.error("Erro ao atualizar tipo:", error);
+      toast({ title: "Erro", description: "Falha ao atualizar tipo", variant: "destructive" });
+    }
   };
 
   const openNewModal = () => {
@@ -292,7 +267,7 @@ export default function TiposQuebra() {
                     <div className="flex items-center gap-2">
                       <Switch
                         checked={tipo.ativo}
-                        onCheckedChange={() => handleToggleAtivo(tipo.id)}
+                        onCheckedChange={() => handleToggleAtivo(tipo)}
                       />
                       {tipo.ativo ? (
                         <Badge className="bg-green-100 text-green-800">Ativo</Badge>

@@ -40,7 +40,7 @@ export default function Motoristas() {
   const [editOpen, setEditOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [selected, setSelected] = useState<typeof initialMotoristas[0] | null>(null);
+  const [selected, setSelected] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ nome: "", telefone: "", status: "" });
 
   const filtered = useMemo(() => {

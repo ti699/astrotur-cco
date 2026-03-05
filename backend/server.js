@@ -60,6 +60,7 @@ app.use('/api/abastecimentos', require('./routes/abastecimentos'));
 app.use('/api/avarias', require('./routes/avarias'));
 app.use('/api/banco-distancias', require('./routes/banco-distancias'));
 app.use('/api/portaria', require('./routes/portaria'));
+app.use('/api/tipos-quebra', require('./routes/tipos-quebra'));
 app.use('/api/relatorios', require('./routes/relatorios'));
 
 // Health check
