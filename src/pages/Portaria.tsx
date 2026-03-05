@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus, Search, ArrowDownToLine, ArrowUpFromLine, Download, Upload, MoreHorizontal, Eye, Edit, Clock, FileText, Route,
 } from "lucide-react";
@@ -17,6 +17,7 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/services/api";
 
 interface EntradaRecord {
   id: number; dataHora: string; monitor: string; veiculo: string;
@@ -45,6 +46,7 @@ export default function Portaria() {
   const [searchTerm, setSearchTerm] = useState("");
   const [entradas, setEntradas] = useState<EntradaRecord[]>([]);
   const [saidas, setSaidas] = useState<SaidaRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [entradaDialogOpen, setEntradaDialogOpen] = useState(false);
   const [saidaDialogOpen, setSaidaDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -56,6 +58,27 @@ export default function Portaria() {
   const [formEntrada, setFormEntrada] = useState({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmEntrada: "", kmInicioRota: "", kmFimRota: "", motorista: "", cliente: "", localSaida: "", motivo: "", descricao: "" });
   // Form state: Saída
   const [formSaida, setFormSaida] = useState({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });
+
+  // Load entradas and saidas from backend
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [entradasRes, saidasRes] = await Promise.all([
+          api.get('/portaria/entradas'),
+          api.get('/portaria/saidas')
+        ]);
+        setEntradas(entradasRes.data || []);
+        setSaidas(saidasRes.data || []);
+      } catch (error) {
+        console.error('Erro ao carregar portaria:', error);
+        setEntradas([]);
+        setSaidas([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const filteredEntradas = useMemo(() => {
     return entradas.filter((e) =>
@@ -81,52 +104,60 @@ export default function Portaria() {
     setDetalhesOpen(true);
   };
 
-  const handleRegistrarEntrada = () => {
+  const handleRegistrarEntrada = async () => {
     if (!formEntrada.veiculo || !formEntrada.kmEntrada) {
       toast({ title: "Campos obrigatórios", description: "Preencha veículo e KM de entrada.", variant: "destructive" });
       return;
     }
-    const nova: EntradaRecord = {
-      id: Date.now(),
-      dataHora: new Date(formEntrada.dataHora).toLocaleString("pt-BR"),
-      monitor: formEntrada.monitor,
-      veiculo: formEntrada.veiculo,
-      kmEntrada: parseInt(formEntrada.kmEntrada) || 0,
-      kmInicioRota: parseInt(formEntrada.kmInicioRota) || 0,
-      kmFimRota: parseInt(formEntrada.kmFimRota) || 0,
-      motorista: formEntrada.motorista,
-      cliente: formEntrada.cliente,
-      localSaida: formEntrada.localSaida,
-      motivo: formEntrada.motivo,
-      programado: true,
-      descricao: formEntrada.descricao,
-    };
-    setEntradas((prev) => [nova, ...prev]);
-    toast({ title: "Entrada registrada!", description: "A entrada do veículo foi registrada com sucesso." });
-    setEntradaDialogOpen(false);
-    setFormEntrada({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmEntrada: "", kmInicioRota: "", kmFimRota: "", motorista: "", cliente: "", localSaida: "", motivo: "", descricao: "" });
+    try {
+      const response = await api.post('/portaria/entradas', {
+        dataHora: new Date(formEntrada.dataHora).toLocaleString("pt-BR"),
+        monitor: formEntrada.monitor,
+        veiculo: formEntrada.veiculo,
+        kmEntrada: parseInt(formEntrada.kmEntrada) || 0,
+        kmInicioRota: parseInt(formEntrada.kmInicioRota) || 0,
+        kmFimRota: parseInt(formEntrada.kmFimRota) || 0,
+        motorista: formEntrada.motorista,
+        cliente: formEntrada.cliente,
+        localSaida: formEntrada.localSaida,
+        motivo: formEntrada.motivo,
+        programado: true,
+        descricao: formEntrada.descricao,
+      });
+      setEntradas((prev) => [response.data, ...prev]);
+      toast({ title: "Entrada registrada!", description: "A entrada do veículo foi registrada com sucesso." });
+      setEntradaDialogOpen(false);
+      setFormEntrada({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmEntrada: "", kmInicioRota: "", kmFimRota: "", motorista: "", cliente: "", localSaida: "", motivo: "", descricao: "" });
+    } catch (error) {
+      console.error("Erro ao registrar entrada:", error);
+      toast({ title: "Erro", description: "Falha ao registrar entrada", variant: "destructive" });
+    }
   };
 
-  const handleRegistrarSaida = () => {
+  const handleRegistrarSaida = async () => {
     if (!formSaida.veiculo || !formSaida.kmSaida) {
       toast({ title: "Campos obrigatórios", description: "Preencha veículo e KM de saída.", variant: "destructive" });
       return;
     }
-    const nova: SaidaRecord = {
-      id: Date.now(),
-      dataHora: new Date(formSaida.dataHora).toLocaleString("pt-BR"),
-      monitor: formSaida.monitor,
-      veiculo: formSaida.veiculo,
-      kmSaida: parseInt(formSaida.kmSaida) || 0,
-      motorista: formSaida.motorista,
-      destino: formSaida.destino,
-      vistoriaConforme: formSaida.vistoriaConforme === "sim",
-      observacoes: formSaida.observacoes,
-    };
-    setSaidas((prev) => [nova, ...prev]);
-    toast({ title: "Saída registrada!", description: "A saída do veículo foi registrada com sucesso." });
-    setSaidaDialogOpen(false);
-    setFormSaida({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });
+    try {
+      const response = await api.post('/portaria/saidas', {
+        dataHora: new Date(formSaida.dataHora).toLocaleString("pt-BR"),
+        monitor: formSaida.monitor,
+        veiculo: formSaida.veiculo,
+        kmSaida: parseInt(formSaida.kmSaida) || 0,
+        motorista: formSaida.motorista,
+        destino: formSaida.destino,
+        vistoriaConforme: formSaida.vistoriaConforme === "sim",
+        observacoes: formSaida.observacoes,
+      });
+      setSaidas((prev) => [response.data, ...prev]);
+      toast({ title: "Saída registrada!", description: "A saída do veículo foi registrada com sucesso." });
+      setSaidaDialogOpen(false);
+      setFormSaida({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });
+    } catch (error) {
+      console.error("Erro ao registrar saída:", error);
+      toast({ title: "Erro", description: "Falha ao registrar saída", variant: "destructive" });
+    }
   };
 
   const handleRelatorio = async () => {
