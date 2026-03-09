@@ -34,6 +34,46 @@ interface SaidaRecord {
 const motivosEntrada = ["RECOLHE NA GARAGEM", "MANUTENÇÃO", "ABASTECIMENTO", "SOLICITAÇÃO OPERAÇÃO"];
 const monitores = ["VALDOMIRO", "MACARIO", "IRANILDO", "ANDERSON"];
 
+const toNumber = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toBrDateTime = (value: unknown) => {
+  if (!value) return "";
+  const asDate = new Date(String(value));
+  if (Number.isNaN(asDate.getTime())) return String(value);
+  return asDate.toLocaleString("pt-BR");
+};
+
+const normalizeEntrada = (raw: any): EntradaRecord => ({
+  id: toNumber(raw?.id),
+  dataHora: toBrDateTime(raw?.dataHora ?? raw?.datahora ?? raw?.data_hora),
+  monitor: raw?.monitor ?? "",
+  veiculo: String(raw?.veiculo ?? ""),
+  kmEntrada: toNumber(raw?.kmEntrada ?? raw?.kmentrada ?? raw?.km_entrada),
+  kmInicioRota: toNumber(raw?.kmInicioRota ?? raw?.kminiciorota ?? raw?.km_inicio_rota),
+  kmFimRota: toNumber(raw?.kmFimRota ?? raw?.kmfimrota ?? raw?.km_fim_rota),
+  motorista: raw?.motorista ?? "",
+  cliente: raw?.cliente ?? "",
+  localSaida: raw?.localSaida ?? raw?.localsaida ?? raw?.local_saida ?? "",
+  motivo: raw?.motivo ?? "",
+  programado: Boolean(raw?.programado ?? true),
+  descricao: raw?.descricao ?? "",
+});
+
+const normalizeSaida = (raw: any): SaidaRecord => ({
+  id: toNumber(raw?.id),
+  dataHora: toBrDateTime(raw?.dataHora ?? raw?.datahora ?? raw?.data_hora),
+  monitor: raw?.monitor ?? "",
+  veiculo: String(raw?.veiculo ?? ""),
+  kmSaida: toNumber(raw?.kmSaida ?? raw?.kmsaida ?? raw?.km_saida),
+  motorista: raw?.motorista ?? "",
+  destino: raw?.destino ?? "",
+  vistoriaConforme: Boolean(raw?.vistoriaConforme ?? raw?.vistoriaconforme ?? raw?.vistoria_conforme),
+  observacoes: raw?.observacoes ?? "",
+});
+
 // Calcula KM morto refinado
 const calcKmMorto = (entry: EntradaRecord) => {
   const kmSaidaGaragem = entry.kmInicioRota - 10;
@@ -67,8 +107,8 @@ export default function Portaria() {
           api.get('/portaria/entradas'),
           api.get('/portaria/saidas')
         ]);
-        setEntradas(entradasRes.data || []);
-        setSaidas(saidasRes.data || []);
+        setEntradas((entradasRes.data || []).map(normalizeEntrada));
+        setSaidas((saidasRes.data || []).map(normalizeSaida));
       } catch (error) {
         console.error('Erro ao carregar portaria:', error);
         setEntradas([]);
@@ -111,7 +151,7 @@ export default function Portaria() {
     }
     try {
       const response = await api.post('/portaria/entradas', {
-        dataHora: new Date(formEntrada.dataHora).toLocaleString("pt-BR"),
+        dataHora: formEntrada.dataHora ? new Date(formEntrada.dataHora).toISOString() : new Date().toISOString(),
         monitor: formEntrada.monitor,
         veiculo: formEntrada.veiculo,
         kmEntrada: parseInt(formEntrada.kmEntrada) || 0,
@@ -124,7 +164,7 @@ export default function Portaria() {
         programado: true,
         descricao: formEntrada.descricao,
       });
-      setEntradas((prev) => [response.data, ...prev]);
+      setEntradas((prev) => [normalizeEntrada(response.data), ...prev]);
       toast({ title: "Entrada registrada!", description: "A entrada do veículo foi registrada com sucesso." });
       setEntradaDialogOpen(false);
       setFormEntrada({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmEntrada: "", kmInicioRota: "", kmFimRota: "", motorista: "", cliente: "", localSaida: "", motivo: "", descricao: "" });
@@ -141,7 +181,7 @@ export default function Portaria() {
     }
     try {
       const response = await api.post('/portaria/saidas', {
-        dataHora: new Date(formSaida.dataHora).toLocaleString("pt-BR"),
+        dataHora: formSaida.dataHora ? new Date(formSaida.dataHora).toISOString() : new Date().toISOString(),
         monitor: formSaida.monitor,
         veiculo: formSaida.veiculo,
         kmSaida: parseInt(formSaida.kmSaida) || 0,
@@ -150,7 +190,7 @@ export default function Portaria() {
         vistoriaConforme: formSaida.vistoriaConforme === "sim",
         observacoes: formSaida.observacoes,
       });
-      setSaidas((prev) => [response.data, ...prev]);
+      setSaidas((prev) => [normalizeSaida(response.data), ...prev]);
       toast({ title: "Saída registrada!", description: "A saída do veículo foi registrada com sucesso." });
       setSaidaDialogOpen(false);
       setFormSaida({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });

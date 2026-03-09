@@ -1,12 +1,40 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../config/database');
+const db = require('../config/database');
+
+const mapEntrada = (row) => ({
+  id: row.id,
+  dataHora: row.datahora ?? row.data_hora ?? row.dataHora,
+  monitor: row.monitor,
+  veiculo: row.veiculo,
+  kmEntrada: row.kmentrada ?? row.km_entrada ?? row.kmEntrada,
+  kmInicioRota: row.kminiciorota ?? row.km_inicio_rota ?? row.kmInicioRota,
+  kmFimRota: row.kmfimrota ?? row.km_fim_rota ?? row.kmFimRota,
+  motorista: row.motorista,
+  cliente: row.cliente,
+  localSaida: row.localsaida ?? row.local_saida ?? row.localSaida,
+  motivo: row.motivo,
+  programado: row.programado,
+  descricao: row.descricao,
+});
+
+const mapSaida = (row) => ({
+  id: row.id,
+  dataHora: row.datahora ?? row.data_hora ?? row.dataHora,
+  monitor: row.monitor,
+  veiculo: row.veiculo,
+  kmSaida: row.kmsaida ?? row.km_saida ?? row.kmSaida,
+  motorista: row.motorista,
+  destino: row.destino,
+  vistoriaConforme: row.vistoriaconforme ?? row.vistoria_conforme ?? row.vistoriaConforme,
+  observacoes: row.observacoes,
+});
 
 // GET /api/portaria/entradas - List all entradas
 router.get('/entradas', async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM portaria_entradas ORDER BY dataHora DESC');
-    res.json(result.rows);
+    const result = await db.query('SELECT * FROM portaria_entradas ORDER BY id DESC');
+    res.json(result.rows.map(mapEntrada));
   } catch (error) {
     console.error('Erro ao listar entradas:', error);
     res.status(500).json({ error: error.message });
@@ -16,8 +44,8 @@ router.get('/entradas', async (req, res) => {
 // GET /api/portaria/saidas - List all saidas
 router.get('/saidas', async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM portaria_saidas ORDER BY dataHora DESC');
-    res.json(result.rows);
+    const result = await db.query('SELECT * FROM portaria_saidas ORDER BY id DESC');
+    res.json(result.rows.map(mapSaida));
   } catch (error) {
     console.error('Erro ao listar saídas:', error);
     res.status(500).json({ error: error.message });
@@ -36,7 +64,7 @@ router.post('/entradas', async (req, res) => {
       [dataHora, monitor, veiculo, kmEntrada, kmInicioRota, kmFimRota, motorista, cliente, localSaida, motivo, programado, descricao || null]
     );
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(mapEntrada(result.rows[0]));
   } catch (error) {
     console.error('Erro ao registrar entrada:', error);
     res.status(500).json({ error: error.message });
@@ -55,7 +83,7 @@ router.post('/saidas', async (req, res) => {
       [dataHora, monitor, veiculo, kmSaida, motorista, destino, vistoriaConforme, observacoes || null]
     );
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(mapSaida(result.rows[0]));
   } catch (error) {
     console.error('Erro ao registrar saída:', error);
     res.status(500).json({ error: error.message });

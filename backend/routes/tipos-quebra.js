@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../config/database');
+const db = require('../config/database');
 
 // GET /api/tipos-quebra - List all tipos de quebra
 router.get('/', async (req, res) => {
