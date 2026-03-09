@@ -17,7 +17,7 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 
 interface EntradaRecord {
   id: number; dataHora: string; monitor: string; veiculo: string;
@@ -99,25 +99,21 @@ export default function Portaria() {
   // Form state: Saída
   const [formSaida, setFormSaida] = useState({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });
 
-  // Load entradas and saidas from backend
+  // Load entradas and saidas from Supabase
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [entradasRes, saidasRes] = await Promise.all([
-          api.get('/portaria/entradas'),
-          api.get('/portaria/saidas')
-        ]);
-        setEntradas((entradasRes.data || []).map(normalizeEntrada));
-        setSaidas((saidasRes.data || []).map(normalizeSaida));
-      } catch (error) {
-        console.error('Erro ao carregar portaria:', error);
-        setEntradas([]);
-        setSaidas([]);
-      } finally {
-        setLoading(false);
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('portaria_movimentacoes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        setEntradas(data.filter((r) => r.tipo === 'entrada').map(normalizeEntrada));
+        setSaidas(data.filter((r) => r.tipo === 'saida').map(normalizeSaida));
       }
-    };
-    fetchData();
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredEntradas = useMemo(() => {
@@ -150,21 +146,22 @@ export default function Portaria() {
       return;
     }
     try {
-      const response = await api.post('/portaria/entradas', {
-        dataHora: formEntrada.dataHora ? new Date(formEntrada.dataHora).toISOString() : new Date().toISOString(),
+      const { data: row, error } = await supabase.from('portaria_movimentacoes').insert({
+        tipo: 'entrada',
+        data_hora: formEntrada.dataHora ? new Date(formEntrada.dataHora).toISOString() : new Date().toISOString(),
         monitor: formEntrada.monitor,
         veiculo: formEntrada.veiculo,
-        kmEntrada: parseInt(formEntrada.kmEntrada) || 0,
-        kmInicioRota: parseInt(formEntrada.kmInicioRota) || 0,
-        kmFimRota: parseInt(formEntrada.kmFimRota) || 0,
+        km_entrada: parseInt(formEntrada.kmEntrada) || 0,
+        km_inicio_rota: parseInt(formEntrada.kmInicioRota) || 0,
+        km_fim_rota: parseInt(formEntrada.kmFimRota) || 0,
         motorista: formEntrada.motorista,
         cliente: formEntrada.cliente,
-        localSaida: formEntrada.localSaida,
+        local_saida: formEntrada.localSaida,
         motivo: formEntrada.motivo,
-        programado: true,
         descricao: formEntrada.descricao,
-      });
-      setEntradas((prev) => [normalizeEntrada(response.data), ...prev]);
+      }).select().single();
+      if (error) throw error;
+      setEntradas((prev) => [normalizeEntrada(row), ...prev]);
       toast({ title: "Entrada registrada!", description: "A entrada do veículo foi registrada com sucesso." });
       setEntradaDialogOpen(false);
       setFormEntrada({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmEntrada: "", kmInicioRota: "", kmFimRota: "", motorista: "", cliente: "", localSaida: "", motivo: "", descricao: "" });
@@ -180,17 +177,19 @@ export default function Portaria() {
       return;
     }
     try {
-      const response = await api.post('/portaria/saidas', {
-        dataHora: formSaida.dataHora ? new Date(formSaida.dataHora).toISOString() : new Date().toISOString(),
+      const { data: row, error } = await supabase.from('portaria_movimentacoes').insert({
+        tipo: 'saida',
+        data_hora: formSaida.dataHora ? new Date(formSaida.dataHora).toISOString() : new Date().toISOString(),
         monitor: formSaida.monitor,
         veiculo: formSaida.veiculo,
-        kmSaida: parseInt(formSaida.kmSaida) || 0,
+        km_saida: parseInt(formSaida.kmSaida) || 0,
         motorista: formSaida.motorista,
         destino: formSaida.destino,
-        vistoriaConforme: formSaida.vistoriaConforme === "sim",
+        vistoria_conforme: formSaida.vistoriaConforme === "sim",
         observacoes: formSaida.observacoes,
-      });
-      setSaidas((prev) => [normalizeSaida(response.data), ...prev]);
+      }).select().single();
+      if (error) throw error;
+      setSaidas((prev) => [normalizeSaida(row), ...prev]);
       toast({ title: "Saída registrada!", description: "A saída do veículo foi registrada com sucesso." });
       setSaidaDialogOpen(false);
       setFormSaida({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });

@@ -138,3 +138,106 @@ BEGIN
   RETURN json_build_object('ok', true);
 END;
 $$;
+
+-- =====================================================================
+-- 9. Tabelas para persistência de dados nas demais abas
+-- =====================================================================
+
+-- Abastecimentos
+CREATE TABLE IF NOT EXISTS abastecimentos (
+  id              SERIAL PRIMARY KEY,
+  veiculo         TEXT NOT NULL,
+  motorista       TEXT,
+  data            DATE DEFAULT CURRENT_DATE,
+  litros          NUMERIC(10,2) DEFAULT 0,
+  tipo_combustivel TEXT DEFAULT 'Diesel S10',
+  km_atual        INTEGER DEFAULT 0,
+  posto           TEXT,
+  valor           NUMERIC(10,2) DEFAULT 0,
+  retornou        BOOLEAN DEFAULT false,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Manutenções
+CREATE TABLE IF NOT EXISTS manutencoes (
+  id              SERIAL PRIMARY KEY,
+  veiculo         TEXT NOT NULL,
+  tipo            TEXT DEFAULT 'Preventiva',
+  descricao       TEXT,
+  data_abertura   DATE DEFAULT CURRENT_DATE,
+  data_conclusao  DATE,
+  responsavel     TEXT,
+  status          TEXT DEFAULT 'ABERTA',
+  custo           NUMERIC(10,2),
+  km_entrada      INTEGER DEFAULT 0,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Avarias (DAI - Documento de Avaria Interna)
+CREATE TABLE IF NOT EXISTS avarias (
+  id                   SERIAL PRIMARY KEY,
+  numero_talao         TEXT,
+  data                 TEXT,
+  veiculo              TEXT NOT NULL,
+  motorista            TEXT,
+  tipo_avaria          TEXT,
+  local_veiculo        TEXT,
+  valor_estimado       NUMERIC(10,2) DEFAULT 0,
+  status               TEXT DEFAULT 'AGUARDANDO_PRECIFICACAO',
+  dai_preenchido       BOOLEAN DEFAULT false,
+  decisao              TEXT,
+  percentual_desconto  INTEGER,
+  created_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Motoristas
+CREATE TABLE IF NOT EXISTS motoristas (
+  id           SERIAL PRIMARY KEY,
+  nome         TEXT NOT NULL,
+  matricula    TEXT,
+  cpf          TEXT,
+  cnh          TEXT,
+  cnh_validade TEXT,
+  telefone     TEXT,
+  status       TEXT DEFAULT 'ATIVO',
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Portaria — entradas e saídas de veículos
+CREATE TABLE IF NOT EXISTS portaria_movimentacoes (
+  id               SERIAL PRIMARY KEY,
+  tipo             TEXT NOT NULL,  -- 'entrada' ou 'saida'
+  data_hora        TIMESTAMPTZ DEFAULT NOW(),
+  monitor          TEXT,
+  veiculo          TEXT NOT NULL,
+  km_entrada       INTEGER,
+  km_saida         INTEGER,
+  km_inicio_rota   INTEGER,
+  km_fim_rota      INTEGER,
+  motorista        TEXT,
+  cliente          TEXT,
+  local_saida      TEXT,
+  motivo           TEXT,
+  descricao        TEXT,
+  destino          TEXT,
+  vistoria_conforme BOOLEAN DEFAULT true,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Desabilitar RLS nas novas tabelas (app interno)
+ALTER TABLE abastecimentos       DISABLE ROW LEVEL SECURITY;
+ALTER TABLE manutencoes          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE avarias              DISABLE ROW LEVEL SECURITY;
+ALTER TABLE motoristas           DISABLE ROW LEVEL SECURITY;
+ALTER TABLE portaria_movimentacoes DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS banco_distancias (
+  id               BIGSERIAL PRIMARY KEY,
+  origem           TEXT NOT NULL,
+  destino          TEXT NOT NULL,
+  distancia_km     NUMERIC(10,2) NOT NULL DEFAULT 0,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE banco_distancias DISABLE ROW LEVEL SECURITY;
+
+SELECT 'Tabelas adicionais criadas com sucesso!' as resultado;

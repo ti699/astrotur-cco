@@ -19,7 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 
 const getStatusBadge = (status: string) => {
   const map: Record<string, { label: string; cls: string; icon: typeof Clock }> = {
@@ -52,20 +52,30 @@ export default function Avarias() {
   const [loading, setLoading] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
 
-  // Load avarias from backend
+  const mapRow = (r: Record<string, unknown>): any => ({
+    id: r.id,
+    data: r.data,
+    veiculo: r.veiculo,
+    motorista: r.motorista,
+    status: r.status,
+    decisao: r.decisao,
+    numeroTalao: r.numero_talao,
+    tipoAvaria: r.tipo_avaria,
+    localVeiculo: r.local_veiculo,
+    valorEstimado: r.valor_estimado,
+    daiPreenchido: r.dai_preenchido,
+    percentualDesconto: r.percentual_desconto,
+  });
+
+  // Load avarias from Supabase
   useEffect(() => {
-    const fetchAvarias = async () => {
-      try {
-        const response = await api.get("/avarias");
-        setAvarias(response.data || []);
-      } catch (error) {
-        console.error("Erro ao carregar avarias:", error);
-        setAvarias([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAvarias();
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase.from('avarias').select('*').order('created_at', { ascending: false });
+      if (!error) setAvarias((data || []).map((r) => mapRow(r as Record<string, unknown>)));
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Dossiê modal
@@ -82,7 +92,30 @@ export default function Avarias() {
   const [percentual, setPercentual] = useState("30");
   const [justificativa, setJustificativa] = useState("");
 
-  const handleNovaAvaria = (novaAvaria: any) => setAvarias((prev) => [novaAvaria, ...prev]);
+  const handleNovaAvaria = async (novaAvaria: any) => {
+    try {
+      const { data: row, error } = await supabase.from('avarias').insert({
+        data: novaAvaria.data || new Date().toISOString().slice(0, 10),
+        veiculo: novaAvaria.veiculo,
+        motorista: novaAvaria.motorista,
+        status: novaAvaria.status || 'AGUARDANDO_PRECIFICACAO',
+        decisao: novaAvaria.decisao || null,
+        numero_talao: novaAvaria.numeroTalao,
+        tipo_avaria: novaAvaria.tipoAvaria,
+        local_veiculo: novaAvaria.localVeiculo,
+        valor_estimado: novaAvaria.valorEstimado || 0,
+        dai_preenchido: novaAvaria.daiPreenchido || false,
+        percentual_desconto: novaAvaria.percentualDesconto || 0,
+      }).select().single();
+      if (!error && row) {
+        setAvarias((prev) => [mapRow(row as Record<string, unknown>), ...prev]);
+      } else {
+        setAvarias((prev) => [novaAvaria, ...prev]);
+      }
+    } catch {
+      setAvarias((prev) => [novaAvaria, ...prev]);
+    }
+  };
 
   const filtered = useMemo(() => {
     return avarias.filter((a) => {
@@ -107,11 +140,14 @@ export default function Avarias() {
   const confirmPrecificar = async () => {
     if (!selectedAvaria) return;
     try {
-      const response = await api.patch(`/avarias/${selectedAvaria.id}`, {
-        status: "PRECIFICADO",
-        valorEstimado: parseFloat(valorPrecificacao) || 0,
-      });
-      setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? response.data : a));
+      const { data: row, error } = await supabase
+        .from('avarias')
+        .update({ status: 'PRECIFICADO', valor_estimado: parseFloat(valorPrecificacao) || 0 })
+        .eq('id', selectedAvaria.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? mapRow(row as Record<string, unknown>) : a));
       toast({ title: "Precificação salva!", description: `${selectedAvaria.numeroTalao} precificado.` });
       setPrecificarOpen(false);
     } catch (error) {
@@ -124,12 +160,14 @@ export default function Avarias() {
     if (!selectedAvaria) return;
     const newStatus = decisao === "COBRADO" ? "JULGADO_COBRADO" : "JULGADO_ABONADO";
     try {
-      const response = await api.patch(`/avarias/${selectedAvaria.id}`, {
-        status: newStatus,
-        decisao,
-        percentualDesconto: parseInt(percentual),
-      });
-      setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? response.data : a));
+      const { data: row, error } = await supabase
+        .from('avarias')
+        .update({ status: newStatus, decisao, percentual_desconto: parseInt(percentual) })
+        .eq('id', selectedAvaria.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setAvarias((prev) => prev.map((a) => a.id === selectedAvaria.id ? mapRow(row as Record<string, unknown>) : a));
       toast({ title: "Julgamento registrado!", description: `${selectedAvaria.numeroTalao} - ${decisao}` });
       setJulgarOpen(false);
     } catch (error) {

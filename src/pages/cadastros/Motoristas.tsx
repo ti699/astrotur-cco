@@ -18,7 +18,7 @@ import { ConfirmarExclusaoDialog } from "@/components/shared/ConfirmarExclusaoDi
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 
 const initialMotoristas: any[] = [];
 
@@ -45,20 +45,28 @@ export default function Motoristas() {
   const [selected, setSelected] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ nome: "", telefone: "", status: "" });
 
-  // Load motoristas from backend
+  const mapRow = (r: Record<string, unknown>) => ({
+    id: r.id,
+    nome: (r.nome as string) || '',
+    matricula: (r.matricula as string) || '',
+    cpf: (r.cpf as string) || '',
+    cnh: (r.cnh as string) || '',
+    cnhValidade: (r.cnh_validade as string) || '',
+    telefone: (r.telefone as string) || '',
+    status: (r.status as string) || 'ATIVO',
+    avarias: 0,
+    cnhAlerta: false,
+  });
+
+  // Load motoristas from Supabase
   useEffect(() => {
-    const fetchMotoristas = async () => {
-      try {
-        const response = await api.get('/motoristas');
-        setMotoristas(response.data || []);
-      } catch (error) {
-        console.error('Erro ao carregar motoristas:', error);
-        setMotoristas([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMotoristas();
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase.from('motoristas').select('*').order('nome', { ascending: true });
+      if (!error) setMotoristas((data || []).map((r) => mapRow(r as Record<string, unknown>)));
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
@@ -83,16 +91,17 @@ export default function Motoristas() {
 
   const confirmNovo = async () => {
     try {
-      const response = await api.post('/motoristas', {
+      const { data: row, error } = await supabase.from('motoristas').insert({
         nome: novoForm.nome,
         matricula: novoForm.matricula,
         cpf: novoForm.cpf,
         cnh: novoForm.cnh,
-        cnhValidade: novoForm.cnhValidade,
+        cnh_validade: novoForm.cnhValidade,
         telefone: novoForm.telefone,
         status: novoForm.status,
-      });
-      setMotoristas((prev) => [response.data, ...prev]);
+      }).select().single();
+      if (error) throw error;
+      setMotoristas((prev) => [mapRow(row as Record<string, unknown>), ...prev]);
       toast({ title: "Motorista cadastrado!", description: novoForm.nome });
       setNovoOpen(false);
       setNovoForm({ nome: "", matricula: "", cpf: "", cnh: "D", cnhValidade: "", telefone: "", status: "ATIVO" });
@@ -105,12 +114,14 @@ export default function Motoristas() {
   const confirmEdit = async () => {
     if (!selected) return;
     try {
-      const response = await api.patch(`/motoristas/${selected.id}`, {
-        nome: editForm.nome,
-        telefone: editForm.telefone,
-        status: editForm.status,
-      });
-      setMotoristas((prev) => prev.map((m) => m.id === selected.id ? response.data : m));
+      const { data: row, error } = await supabase
+        .from('motoristas')
+        .update({ nome: editForm.nome, telefone: editForm.telefone, status: editForm.status })
+        .eq('id', selected.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setMotoristas((prev) => prev.map((m) => m.id === selected.id ? mapRow(row as Record<string, unknown>) : m));
       toast({ title: "Motorista atualizado!" });
       setEditOpen(false);
     } catch (error) {
@@ -122,8 +133,9 @@ export default function Motoristas() {
   const confirmDelete = async () => {
     if (!selected) return;
     try {
-      const response = await api.delete(`/motoristas/${selected.id}`);
-      setMotoristas((prev) => prev.map((m) => m.id === selected.id ? response.data : m));
+      const { error } = await supabase.from('motoristas').update({ status: 'DESLIGADO' }).eq('id', selected.id);
+      if (error) throw error;
+      setMotoristas((prev) => prev.map((m) => m.id === selected.id ? { ...m, status: 'DESLIGADO' } : m));
       toast({ title: "Motorista desativado" });
       setExcluirOpen(false);
     } catch (error) {

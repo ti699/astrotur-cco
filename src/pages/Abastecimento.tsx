@@ -15,7 +15,7 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 
 interface Abastecimento {
   id: number;
@@ -42,21 +42,28 @@ export default function Abastecimento() {
   const [selected, setSelected] = useState<Abastecimento | null>(null);
   const [form, setForm] = useState({ veiculo: "", motorista: "", litros: "", tipoCombustivel: "Diesel S10", kmAtual: "", posto: "", valor: "" });
 
-  // Carregar abastecimentos do backend
+  const mapRow = (r: Record<string, unknown>): Abastecimento => ({
+    id: r.id as number,
+    veiculo: (r.veiculo as string) || '',
+    motorista: (r.motorista as string) || '',
+    data: (r.data as string) || '',
+    litros: (r.litros as number) || 0,
+    tipoCombustivel: (r.tipo_combustivel as string) || 'Diesel S10',
+    kmAtual: (r.km_atual as number) || 0,
+    posto: (r.posto as string) || '',
+    valor: (r.valor as number) || 0,
+    retornou: (r.retornou as boolean) || false,
+  });
+
+  // Carregar abastecimentos do Supabase
   useEffect(() => {
-    const carregarAbastecimentos = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get('/abastecimentos');
-        setAbastecimentos(response.data || []);
-      } catch (error) {
-        console.error('Erro ao carregar abastecimentos:', error);
-        setAbastecimentos([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    carregarAbastecimentos();
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase.from('abastecimentos').select('*').order('created_at', { ascending: false });
+      if (!error) setAbastecimentos((data || []).map(mapRow));
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
@@ -76,16 +83,19 @@ export default function Abastecimento() {
 
   const handleCriar = async () => {
     try {
-      const response = await api.post('/abastecimentos', {
+      const { data: row, error } = await supabase.from('abastecimentos').insert({
         veiculo: form.veiculo,
         motorista: form.motorista,
-        litros: parseFloat(form.litros),
-        tipoCombustivel: form.tipoCombustivel,
-        kmAtual: parseInt(form.kmAtual),
+        litros: parseFloat(form.litros) || 0,
+        tipo_combustivel: form.tipoCombustivel,
+        km_atual: parseInt(form.kmAtual) || 0,
         posto: form.posto,
-        valor: parseFloat(form.valor),
-      });
-      setAbastecimentos((prev) => [response.data, ...prev]);
+        valor: parseFloat(form.valor) || 0,
+        retornou: false,
+        data: new Date().toISOString().split('T')[0],
+      }).select().single();
+      if (error) throw error;
+      setAbastecimentos((prev) => [mapRow(row), ...prev]);
       toast({ title: "Abastecimento registrado!", description: `Veículo #${form.veiculo}` });
       setNovaOpen(false);
       setForm({ veiculo: "", motorista: "", litros: "", tipoCombustivel: "Diesel S10", kmAtual: "", posto: "", valor: "" });
@@ -97,10 +107,9 @@ export default function Abastecimento() {
 
   const handleRetorno = async (a: Abastecimento) => {
     try {
-      const response = await api.patch(`/abastecimentos/${a.id}`, {
-        retornou: true,
-      });
-      setAbastecimentos((prev) => prev.map((x) => x.id === a.id ? response.data : x));
+      const { data: row, error } = await supabase.from('abastecimentos').update({ retornou: true }).eq('id', a.id).select().single();
+      if (error) throw error;
+      setAbastecimentos((prev) => prev.map((x) => x.id === a.id ? mapRow(row) : x));
       toast({ title: "Retorno confirmado!", description: `Veículo #${a.veiculo} retornou do abastecimento.` });
     } catch (error) {
       toast({ title: "Erro ao confirmar retorno", variant: "destructive" });

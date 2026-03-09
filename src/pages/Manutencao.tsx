@@ -16,7 +16,7 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 
 type ManutencaoStatus = "ABERTA" | "EM_ANDAMENTO" | "CONCLUIDA";
 
@@ -56,21 +56,28 @@ export default function Manutencao() {
   const [selected, setSelected] = useState<Manutencao | null>(null);
   const [form, setForm] = useState({ veiculo: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
 
-  // Carregar manutenções do backend
+  const mapRow = (r: Record<string, unknown>): Manutencao => ({
+    id: r.id as number,
+    veiculo: (r.veiculo as string) || '',
+    tipo: (r.tipo as string) || 'Preventiva',
+    descricao: (r.descricao as string) || '',
+    dataAbertura: (r.data_abertura as string) || '',
+    dataConclusao: (r.data_conclusao as string) || undefined,
+    responsavel: (r.responsavel as string) || '',
+    status: ((r.status as string) || 'ABERTA') as ManutencaoStatus,
+    custo: r.custo as number | undefined,
+    kmEntrada: (r.km_entrada as number) || 0,
+  });
+
+  // Carregar manutencoes do Supabase
   useEffect(() => {
-    const carregarManutencoes = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get('/manutencoes');
-        setManutencoes(response.data || []);
-      } catch (error) {
-        console.error('Erro ao carregar manutenções:', error);
-        setManutencoes([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    carregarManutencoes();
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase.from('manutencoes').select('*').order('created_at', { ascending: false });
+      if (!error) setManutencoes((data || []).map(mapRow));
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
@@ -90,46 +97,49 @@ export default function Manutencao() {
 
   const handleCriar = async () => {
     try {
-      const response = await api.post('/manutencoes', {
+      const { data: row, error } = await supabase.from('manutencoes').insert({
         veiculo: form.veiculo,
         tipo: form.tipo,
         descricao: form.descricao,
         responsavel: form.responsavel,
-        kmEntrada: parseInt(form.kmEntrada) || 0,
-      });
-      setManutencoes((prev) => [response.data, ...prev]);
-      toast({ title: "Manutenção registrada!", description: `Veículo #${form.veiculo} enviado para manutenção.` });
+        km_entrada: parseInt(form.kmEntrada) || 0,
+        status: 'ABERTA',
+        data_abertura: new Date().toISOString().split('T')[0],
+      }).select().single();
+      if (error) throw error;
+      setManutencoes((prev) => [mapRow(row), ...prev]);
+      toast({ title: "Manutencao registrada!", description: `Veiculo #${form.veiculo} enviado para manutencao.` });
       setNovaOpen(false);
       setForm({ veiculo: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
     } catch (error) {
-      toast({ title: "Erro ao criar manutenção", variant: "destructive" });
+      toast({ title: "Erro ao criar manutencao", variant: "destructive" });
       console.error(error);
     }
   };
 
   const handleConcluir = async (m: Manutencao) => {
     try {
-      const response = await api.patch(`/manutencoes/${m.id}`, {
-        status: "CONCLUIDA",
-        dataConclusao: new Date().toISOString().split("T")[0],
-      });
-      setManutencoes((prev) => prev.map((x) => x.id === m.id ? response.data : x));
-      toast({ title: "Manutenção concluída!", description: `Veículo #${m.veiculo} liberado.` });
+      const { data: row, error } = await supabase.from('manutencoes').update({
+        status: 'CONCLUIDA',
+        data_conclusao: new Date().toISOString().split('T')[0],
+      }).eq('id', m.id).select().single();
+      if (error) throw error;
+      setManutencoes((prev) => prev.map((x) => x.id === m.id ? mapRow(row) : x));
+      toast({ title: "Manutencao concluida!", description: `Veiculo #${m.veiculo} liberado.` });
     } catch (error) {
-      toast({ title: "Erro ao concluir manutenção", variant: "destructive" });
+      toast({ title: "Erro ao concluir manutencao", variant: "destructive" });
       console.error(error);
     }
   };
 
   const handleIniciar = async (m: Manutencao) => {
     try {
-      const response = await api.patch(`/manutencoes/${m.id}`, {
-        status: "EM_ANDAMENTO",
-      });
-      setManutencoes((prev) => prev.map((x) => x.id === m.id ? response.data : x));
-      toast({ title: "Manutenção iniciada", description: `Veículo #${m.veiculo} em manutenção.` });
+      const { data: row, error } = await supabase.from('manutencoes').update({ status: 'EM_ANDAMENTO' }).eq('id', m.id).select().single();
+      if (error) throw error;
+      setManutencoes((prev) => prev.map((x) => x.id === m.id ? mapRow(row) : x));
+      toast({ title: "Manutencao iniciada", description: `Veiculo #${m.veiculo} em manutencao.` });
     } catch (error) {
-      toast({ title: "Erro ao iniciar manutenção", variant: "destructive" });
+      toast({ title: "Erro ao iniciar manutencao", variant: "destructive" });
       console.error(error);
     }
   };
