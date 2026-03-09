@@ -29,14 +29,9 @@ BEGIN
   END IF;
 END $$;
 
--- 4. Desabilitar RLS nas tabelas (app interno — acesso controlado por login)
-ALTER TABLE usuarios DISABLE ROW LEVEL SECURITY;
-ALTER TABLE clientes DISABLE ROW LEVEL SECURITY;
-ALTER TABLE veiculos DISABLE ROW LEVEL SECURITY;
-ALTER TABLE ocorrencias DISABLE ROW LEVEL SECURITY;
-ALTER TABLE tipos_quebra DISABLE ROW LEVEL SECURITY;
-ALTER TABLE ocorrencia_logs DISABLE ROW LEVEL SECURITY;
-ALTER TABLE ocorrencia_anexos DISABLE ROW LEVEL SECURITY;
+-- 4. Segurança RLS
+-- IMPORTANTE: não desabilitar RLS em produção Supabase.
+-- Use o arquivo `enable-rls-policies.sql` para habilitar políticas.
 
 -- 5. Função de login (verifica senha bcrypt no servidor)
 CREATE OR REPLACE FUNCTION auth_login(p_email text, p_password text)
