@@ -43,25 +43,25 @@ BEGIN
       EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', v_table || '_delete_authenticated', v_table);
 
       EXECUTE format(
-        'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (true)',
+        'CREATE POLICY %I ON public.%I FOR SELECT TO public USING (auth.role() IN (''anon'', ''authenticated'', ''service_role''))',
         v_table || '_select_authenticated',
         v_table
       );
 
       EXECUTE format(
-        'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (true)',
+        'CREATE POLICY %I ON public.%I FOR INSERT TO public WITH CHECK (auth.role() IN (''anon'', ''authenticated'', ''service_role''))',
         v_table || '_insert_authenticated',
         v_table
       );
 
       EXECUTE format(
-        'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (true) WITH CHECK (true)',
+        'CREATE POLICY %I ON public.%I FOR UPDATE TO public USING (auth.role() IN (''anon'', ''authenticated'', ''service_role'')) WITH CHECK (auth.role() IN (''anon'', ''authenticated'', ''service_role''))',
         v_table || '_update_authenticated',
         v_table
       );
 
       EXECUTE format(
-        'CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (true)',
+        'CREATE POLICY %I ON public.%I FOR DELETE TO public USING (auth.role() IN (''anon'', ''authenticated'', ''service_role''))',
         v_table || '_delete_authenticated',
         v_table
       );
