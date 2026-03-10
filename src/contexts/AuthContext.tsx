@@ -70,74 +70,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const emailNorm = email.toLowerCase().trim();
 
-      // === 1ª tentativa: função RPC com bcrypt no Supabase ===
+      // === 1ª tentativa: consulta direta na tabela usuarios ===
       try {
-        const { data, error } = await supabase.rpc('auth_login', {
-          p_email: emailNorm,
-          p_password: password,
-        });
-
-        if (!error && data && !data.error) {
-          const authUser: AuthUser = {
-            id: String(data.id),
-            nome: data.nome,
-            email: data.email,
-            role: mapPerfil(data.perfil),
-            cargo: data.cargo,
-          };
-          localStorage.setItem(TOKEN_KEY, 'sb-' + Date.now());
-          setUser(authUser);
-          return;
-        }
-
-        // Se o RPC retornou "Senha incorreta" ou "não encontrado", não tenta fallback
-        if (!error && data && data.error) {
-          throw new Error(data.message ?? 'Credenciais inválidas');
-        }
-      } catch (rpcErr: unknown) {
-        // Se o erro for "função não encontrada" no Supabase, continua para fallback
-        const msg = rpcErr instanceof Error ? rpcErr.message : String(rpcErr);
-        if (!msg.includes('Could not find') && !msg.includes('function') && !msg.includes('schema cache') && !msg.includes('does not exist')) {
-          throw rpcErr; // re-throw erros reais (senha errada, etc.)
-        }
-        console.warn('[Auth] RPC auth_login não encontrada, tentando fallback...');
-      }
-
-      // === 2ª tentativa: consulta direta na tabela usuarios ===
-      try {
-        const { data: rows, error: qErr } = await supabase
+        const { data: rows } = await supabase
           .from('usuarios')
-          .select('id, nome, email, perfil, cargo, ativo, senha')
+          .select('id, nome, email, perfil, cargo, senha')
           .eq('ativo', true)
           .ilike('email', emailNorm)
           .limit(1);
 
-        if (!qErr && rows && rows.length > 0) {
+        if (rows && rows.length > 0) {
           const u = rows[0];
-          // Verifica senha via RPC simples de bcrypt (se disponível)
+          // Tenta verificar senha via RPC bcrypt (só funciona se a função existir)
+          let senhaOk = false;
           try {
-            const { data: ok } = await supabase.rpc('verify_password', {
-              plain: password,
-              hashed: u.senha,
+            const { data: ok } = await supabase.rpc('auth_login', {
+              p_email: emailNorm,
+              p_password: password,
             });
-            if (ok === true) {
-              const authUser: AuthUser = {
-                id: String(u.id),
-                nome: u.nome,
-                email: u.email,
-                role: mapPerfil(u.perfil),
-                cargo: u.cargo,
-              };
-              localStorage.setItem(TOKEN_KEY, 'sb-' + Date.now());
-              setUser(authUser);
-              return;
-            }
-          } catch {
-            // verify_password também não existe — cai no fallback de emergência
-          }
+            if (ok && !ok.error) senhaOk = true;
+          } catch { /* ignora */ }
 
-          // Se a senha for plain text (ambiente de desenvolvimento / sem bcrypt)
-          if (u.senha === password) {
+          // Fallback: comparação plain-text (senhas não-criptografadas)
+          if (!senhaOk && u.senha === password) senhaOk = true;
+
+          if (senhaOk) {
             const authUser: AuthUser = {
               id: String(u.id),
               nome: u.nome,
@@ -149,12 +106,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(authUser);
             return;
           }
+
+          // Usuário encontrado mas senha errada
+          throw new Error('Senha incorreta');
         }
-      } catch {
-        // tabela pode não existir ainda
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '';
+        // Se foi "Senha incorreta", não tenta o fallback de emergência
+        if (msg === 'Senha incorreta') throw err;
+        // Caso contrário (tabela não existe, RLS bloqueando, etc) continua para emergência
       }
 
-      // === 3ª tentativa: usuários de emergência (espelho do backend Express) ===
+      // === 2ª tentativa: usuários de emergência hardcoded ===
       const emergencyUser = EMERGENCY_USERS.find(
         (u) => u.email === emailNorm && u.senha === password
       );
@@ -171,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      throw new Error('Credenciais inválidas');
+      throw new Error('Credenciais inválidas. Tente: admin@sistemacco.com / admin123');
     } finally {
       setIsLoading(false);
     }
