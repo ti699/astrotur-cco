@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
+import bcrypt from "bcryptjs";
 import { supabase } from "@/lib/supabase";
 
 // Usuários de emergência (espelho do backend Express)
@@ -81,15 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (rows && rows.length > 0) {
           const u = rows[0];
-          // Verifica senha: plain-text ou emergência
-          let senhaOk = u.senha === password;
 
-          // Também aceita senha de emergência para o mesmo e-mail
-          if (!senhaOk) {
-            const emergency = EMERGENCY_USERS.find(
-              (eu) => eu.email === emailNorm && eu.senha === password
-            );
-            if (emergency) senhaOk = true;
+          // Verifica senha: bcrypt (hash $2a/$2b) ou plain-text
+          let senhaOk = false;
+          if (u.senha && u.senha.startsWith('$2')) {
+            senhaOk = await bcrypt.compare(password, u.senha);
+          } else {
+            senhaOk = u.senha === password;
           }
 
           if (senhaOk) {
@@ -105,13 +104,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          // Usuário encontrado mas senha errada (nem DB nem emergência)
-          throw new Error('Senha incorreta');
+          // Usuário encontrado mas senha errada
+          throw new Error('Senha incorreta. Verifique suas credenciais.');
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '';
-        // Se foi "Senha incorreta", não tenta o fallback de emergência
-        if (msg === 'Senha incorreta') throw err;
+        // Se foi senha errada, não tenta fallback de emergência
+        if (msg.startsWith('Senha incorreta')) throw err;
         // Caso contrário (tabela não existe, RLS bloqueando, etc) continua para emergência
       }
 
