@@ -81,18 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (rows && rows.length > 0) {
           const u = rows[0];
-          // Tenta verificar senha via RPC bcrypt (só funciona se a função existir)
-          let senhaOk = false;
-          try {
-            const { data: ok } = await supabase.rpc('auth_login', {
-              p_email: emailNorm,
-              p_password: password,
-            });
-            if (ok && !ok.error) senhaOk = true;
-          } catch { /* ignora */ }
-
-          // Fallback: comparação plain-text (senhas não-criptografadas)
-          if (!senhaOk && u.senha === password) senhaOk = true;
+          // Verifica senha: plain-text ou emergência
+          let senhaOk = u.senha === password;
 
           // Também aceita senha de emergência para o mesmo e-mail
           if (!senhaOk) {
