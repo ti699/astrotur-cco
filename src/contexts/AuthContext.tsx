@@ -94,6 +94,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Fallback: comparação plain-text (senhas não-criptografadas)
           if (!senhaOk && u.senha === password) senhaOk = true;
 
+          // Também aceita senha de emergência para o mesmo e-mail
+          if (!senhaOk) {
+            const emergency = EMERGENCY_USERS.find(
+              (eu) => eu.email === emailNorm && eu.senha === password
+            );
+            if (emergency) senhaOk = true;
+          }
+
           if (senhaOk) {
             const authUser: AuthUser = {
               id: String(u.id),
@@ -107,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          // Usuário encontrado mas senha errada
+          // Usuário encontrado mas senha errada (nem DB nem emergência)
           throw new Error('Senha incorreta');
         }
       } catch (err: unknown) {
