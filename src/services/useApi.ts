@@ -32,13 +32,15 @@ export interface Ocorrencia {
   data_ocorrencia?: string;
   data_quebra?: string;
   tipo_ocorrencia?: string;
+  tipo_socorro?: string | null;
+  descricao_socorro?: string | null;
   tipo_quebra_nome?: string;
   veiculo_placa?: string;
-  houve_troca_veiculo?: string;
+  houve_troca_veiculo?: boolean;
   veiculo_substituto_placa?: string;
   horario_socorro?: string;
   horario_saida?: string;
-  houve_atraso?: string;
+  houve_atraso?: boolean;
   tempo_atraso?: string;
   descricao?: string;
   status?: string;
@@ -116,23 +118,30 @@ function mapOcorrencia(row: any): Ocorrencia {
   const c = row.clientes;
   const v = row.veiculos;
   const tq = row.tipos_quebra;
+  // Converter atraso_minutos de volta para HH:MM
+  const atrasoMin: number = row.atraso_minutos ?? 0;
+  const tempoAtrasoFormatado = atrasoMin > 0
+    ? `${String(Math.floor(atrasoMin / 60)).padStart(2, '0')}:${String(atrasoMin % 60).padStart(2, '0')}`
+    : '';
   return {
     id: row.id,
     numero_ocorrencia: row.numero,
     numero: row.numero,
     cliente_nome: c?.nome ?? obs(row, 'cliente_nome'),
-    monitor_nome: obs(row, 'monitor_nome'),
+    monitor_nome: row.plantonista ?? obs(row, 'monitor_nome'),
     data_ocorrencia: row.data_quebra,
     data_quebra: row.data_quebra,
-    tipo_ocorrencia: tq?.nome ?? obs(row, 'tipo_ocorrencia'),
+    tipo_ocorrencia: row.tipo_ocorrencia ?? tq?.nome ?? obs(row, 'tipo_ocorrencia'),
     tipo_quebra_nome: tq?.nome,
+    tipo_socorro: row.tipo_socorro ?? null,
+    descricao_socorro: row.descricao_socorro ?? null,
     veiculo_placa: v?.placa ?? obs(row, 'veiculo_placa'),
-    houve_troca_veiculo: obs(row, 'houve_troca_veiculo'),
+    houve_troca_veiculo: row.houve_troca_veiculo ?? false,
     veiculo_substituto_placa: obs(row, 'veiculo_substituto_placa'),
-    horario_socorro: obs(row, 'horario_socorro'),
-    horario_saida: obs(row, 'horario_saida'),
-    houve_atraso: obs(row, 'houve_atraso'),
-    tempo_atraso: obs(row, 'tempo_atraso'),
+    horario_socorro: row.horario_socorro ?? obs(row, 'horario_socorro'),
+    horario_saida: row.horario_saida_socorro ?? obs(row, 'horario_saida'),
+    houve_atraso: row.houve_atraso ?? false,
+    tempo_atraso: tempoAtrasoFormatado,
     descricao: row.descricao,
     status: row.status,
     created_at: row.created_at,
@@ -195,8 +204,8 @@ export function useCreateOcorrencia() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (payload: Record<string, unknown>) => {
-      // Resolver veiculo_id pela placa
+    mutationFn: async (payload: import('@/schemas/ocorrenciaSchema').OcorrenciaFormData) => {
+      // ── 1. Resolver veiculo_id pelo campo "veiculo_previsto" (placa) ──────────
       let veiculo_id: number | null = null;
       if (payload.veiculo_previsto) {
         const { data: v } = await supabase
@@ -204,39 +213,57 @@ export function useCreateOcorrencia() {
         veiculo_id = v?.id ?? null;
       }
 
-      // Resolver cliente_id
-      let cliente_id: number | null = payload.cliente_id as number ?? null;
-      if (!cliente_id && payload.cliente) {
+      // ── 2. Resolver veiculo_substituto_id ─────────────────────────────────────
+      let veiculo_substituto_id: number | null = null;
+      if (payload.veiculo_substituto) {
+        const { data: vs } = await supabase
+          .from('veiculos').select('id').eq('placa', payload.veiculo_substituto).maybeSingle();
+        veiculo_substituto_id = vs?.id ?? null;
+      }
+
+      // ── 3. Resolver cliente_id pelo nome ─────────────────────────────────────
+      let cliente_id: number | null = null;
+      if (payload.cliente) {
         const { data: c } = await supabase
           .from('clientes').select('id').eq('nome', payload.cliente).maybeSingle();
         cliente_id = c?.id ?? null;
       }
 
-      // Campos extras no JSONB observacoes
-      const observacoes = JSON.stringify({
-        monitor_nome: payload.plantonista ?? '',
-        cliente_nome: payload.cliente ?? '',
-        veiculo_placa: payload.veiculo_previsto ?? '',
-        veiculo_substituto_placa: payload.veiculo_substituto ?? '',
-        houve_troca_veiculo: payload.veiculo_substituto ? 'sim' : 'nao',
-        tipo_ocorrencia: payload.tipo_ocorrencia ?? '',
-        horario_socorro: payload.horario_socorro ?? '',
-        horario_saida: payload.horario_saida ?? '',
-        houve_atraso: payload.houve_atraso ?? 'nao',
-        tempo_atraso: payload.tempo_atraso ?? '',
-      });
+      // ── 4. Combinar data + hora → timestamp ───────────────────────────────────
+      const data_quebra = payload.hora
+        ? `${payload.data}T${payload.hora}:00`
+        : `${payload.data}T00:00:00`;
 
+      // ── 5. Converter tempo_atraso "HH:MM" → inteiro em minutos ───────────────
+      const { horaParaMinutos } = await import('@/schemas/ocorrenciaSchema');
+      const atraso_minutos = payload.houve_atraso
+        ? horaParaMinutos(payload.tempo_atraso ?? '')
+        : 0;
+
+      // ── 6. Montar payload de insert com colunas reais ─────────────────────────
       const { data, error } = await supabase
         .from('ocorrencias')
         .insert({
           numero: gerarNumero(),
+          // FKs resolvidas
           cliente_id,
           veiculo_id,
-          data_quebra: payload.data_ocorrencia ?? new Date().toISOString(),
+          veiculo_substituto_id,
+          // Dados estruturados — sem JSONB
+          plantonista: payload.plantonista,
+          tipo_ocorrencia: payload.tipo_ocorrencia,
+          tipo_socorro: payload.tipo_ocorrencia === 'Socorro' ? (payload.tipo_socorro ?? null) : null,
+          descricao_socorro: payload.tipo_ocorrencia === 'Socorro' ? (payload.descricao_socorro ?? null) : null,
+          houve_troca_veiculo: Boolean(payload.veiculo_substituto),
+          horario_socorro: payload.tipo_ocorrencia === 'Socorro' ? (payload.horario_socorro || null) : null,
+          horario_saida_socorro: payload.tipo_ocorrencia === 'Socorro' ? (payload.horario_saida || null) : null,
+          houve_atraso: payload.houve_atraso,
+          atraso_minutos,
+          // Tronco existente
+          data_quebra,
           data_chamado: new Date().toISOString(),
-          descricao: payload.descricao ?? '',
-          status: payload.status ?? 'Pendente',
-          observacoes,
+          descricao: payload.descricao,
+          status: payload.status,
         })
         .select('*, clientes(nome), veiculos(placa), tipos_quebra(nome)')
         .single();
@@ -247,7 +274,7 @@ export function useCreateOcorrencia() {
     onSuccess: (newItem) => {
       queryClient.setQueryData<Ocorrencia[]>(['ocorrencias'], (old = []) => [newItem, ...old]);
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      toast({ title: 'OcorrÃªncia registrada!', description: `NÂº ${newItem.numero_ocorrencia}` });
+      toast({ title: 'Ocorrência registrada!', description: `Nº ${newItem.numero_ocorrencia}` });
     },
     onError: (err: Error) => {
       toast({ title: 'Erro ao registrar', description: err.message, variant: 'destructive' });

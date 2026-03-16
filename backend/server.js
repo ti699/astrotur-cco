@@ -63,6 +63,7 @@ app.use('/api/banco-distancias', require('./routes/banco-distancias'));
 app.use('/api/portaria', require('./routes/portaria'));
 app.use('/api/tipos-quebra', require('./routes/tipos-quebra'));
 app.use('/api/relatorios', require('./routes/relatorios'));
+app.use('/api/plantonistas', require('./routes/plantonistas'));
 
 // Health check
 app.get('/api/health', (req, res) => {

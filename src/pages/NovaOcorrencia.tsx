@@ -1,5 +1,6 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Save, AlertTriangle, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,115 +17,87 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { useAuditLog } from "@/hooks/useAuditLog";
 import { TIPOS_SOCORRO, type TipoSocorroNome } from "@/types";
+import {
+  ocorrenciaSchema,
+  TIPOS_OCORRENCIA,
+  type OcorrenciaFormData,
+} from "@/schemas/ocorrenciaSchema";
 import { useCreateOcorrencia, useClientes, useVeiculos } from "@/services/useApi";
 
-const tiposOcorrencia = [
-  "Atraso",
-  "Comunicação ao cliente",
-  "Falta de motorista",
-  "Informação",
-  "N/A",
-  "Quebra",
-  "Retido",
-  "Serviço",
-  "Socorro",
-];
+const PLANTONISTAS = ["VALDOMIRO", "MACARIO", "IRANILDO", "ANDERSON"];
 
-const plantonistas = ["VALDOMIRO", "MACARIO", "IRANILDO", "ANDERSON"];
+// ─── Componente de erro de campo ─────────────────────────────────────────────
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-xs text-destructive mt-1">{message}</p>;
+}
 
 export default function NovaOcorrencia() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { registrarLog } = useAuditLog();
   const createOcorrencia = useCreateOcorrencia();
   const { data: clientesData = [] } = useClientes();
   const { data: veiculosData = [] } = useVeiculos();
 
-  const [houveAtraso, setHouveAtraso] = useState(false);
-  const [tipoOcorrencia, setTipoOcorrencia] = useState("");
-  const [tipoSocorro, setTipoSocorro] = useState<TipoSocorroNome | "">("");
-  const [descricaoSocorro, setDescricaoSocorro] = useState("");
-
-  // Campos controlados do form
-  const [formData, setFormData] = useState({
-    data: new Date().toISOString().split("T")[0],
-    hora: new Date().toTimeString().slice(0, 5),
-    plantonista: "",
-    cliente: "",
-    veiculo_previsto: "",
-    veiculo_substituto: "",
-    horario_socorro: "",
-    horario_saida: "",
-    tempo_atraso: "",
-    status: "PENDENTE",
-    descricao: "",
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<OcorrenciaFormData>({
+    resolver: zodResolver(ocorrenciaSchema),
+    defaultValues: {
+      data: new Date().toISOString().split("T")[0],
+      hora: new Date().toTimeString().slice(0, 5),
+      plantonista: "",
+      cliente: "",
+      tipo_ocorrencia: "",
+      veiculo_previsto: "",
+      veiculo_substituto: "",
+      tipo_socorro: "",
+      descricao_socorro: "",
+      horario_socorro: "",
+      horario_saida: "",
+      houve_atraso: false,
+      tempo_atraso: "",
+      status: "PENDENTE",
+      descricao: "",
+    },
   });
 
-  const setField = (field: string, value: string) =>
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  // Valores observados para renderização condicional
+  const tipoOcorrencia = watch("tipo_ocorrencia");
+  const tipoSocorro = watch("tipo_socorro") as TipoSocorroNome | "";
+  const houveAtraso = watch("houve_atraso");
 
-  // Verificar se tipo de socorro selecionado requer descrição
-  const tipoSocorroConfig = TIPOS_SOCORRO.find(t => t.nome === tipoSocorro);
-  const requerDescricao = tipoSocorroConfig?.requerDescricao || false;
-  const alertaDiretoria = tipoSocorroConfig?.alertaDiretoria || false;
+  const isSocorro = tipoOcorrencia === "Socorro";
+  const tipoSocorroConfig = TIPOS_SOCORRO.find((t) => t.nome === tipoSocorro);
+  const requerDescricaoSocorro = tipoSocorroConfig?.requerDescricao ?? false;
+  const alertaDiretoria = tipoSocorroConfig?.alertaDiretoria ?? false;
   const isAvaria = tipoSocorro === "Avaria";
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // ── Submit ────────────────────────────────────────────────────────────────
 
-    // Validar descrição obrigatória para "Outros"
-    if (requerDescricao && !descricaoSocorro.trim()) {
-      toast({
-        title: "Descrição obrigatória",
-        description: "Para o tipo 'Outros', a descrição é obrigatória.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Alerta para Pane Seca
+  const onSubmit = (data: OcorrenciaFormData) => {
+    // Aviso visual para Pane Seca (não bloqueia o envio)
     if (alertaDiretoria) {
       toast({
-        title: "⚠️ ALERTA CRÍTICO - Pane Seca",
-        description: "A diretoria será notificada automaticamente sobre esta ocorrência.",
+        title: "⚠️ ALERTA CRÍTICO — Pane Seca",
+        description:
+          "A diretoria será notificada automaticamente sobre esta ocorrência.",
         variant: "destructive",
-      });
-      registrarLog("ocorrencia", `oc_${Date.now()}`, "ALERTA_PANE_SECA", undefined, undefined, {
-        tipoSocorro,
-        alertaEnviado: true,
       });
     }
 
-    registrarLog("ocorrencia", `oc_${Date.now()}`, "OCORRENCIA_CRIADA", undefined, "PENDENTE", {
-      tipoOcorrencia,
-      tipoSocorro,
-    });
-
-    // Enviar para o backend
-    const payload = {
-      monitor_nome: formData.plantonista,
-      cliente_nome: formData.cliente,
-      data_ocorrencia: formData.data,
-      tipo_ocorrencia: tipoSocorro || tipoOcorrencia,
-      veiculo_placa: formData.veiculo_previsto,
-      houve_troca_veiculo: formData.veiculo_substituto ? "sim" : "nao",
-      veiculo_substituto_placa: formData.veiculo_substituto || null,
-      horario_socorro: formData.horario_socorro || null,
-      horario_saida: formData.horario_saida || null,
-      houve_atraso: houveAtraso ? "sim" : "nao",
-      tempo_atraso: houveAtraso ? formData.tempo_atraso : null,
-      descricao: formData.descricao || descricaoSocorro,
-      status: formData.status,
-    };
-
-    createOcorrencia.mutate(payload, {
+    createOcorrencia.mutate(data, {
       onSuccess: () => {
         toast({
           title: "Ocorrência registrada!",
           description: isAvaria
-            ? "Ocorrência salva. Sugestão: Abra um workflow de DAI para esta avaria."
+            ? "Ocorrência salva. Considere abrir um workflow de DAI para esta avaria."
             : "A ocorrência foi salva com sucesso.",
         });
         navigate("/ocorrencias");
@@ -134,7 +107,7 @@ export default function NovaOcorrencia() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
+      {/* Cabeçalho */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-5 w-5" />
@@ -145,9 +118,10 @@ export default function NovaOcorrencia() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit(onSubmit)}>
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Dados Básicos */}
+
+          {/* ── Card 1: Dados básicos ────────────────────────────────────────── */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Dados da Ocorrência</CardTitle>
@@ -156,187 +130,214 @@ export default function NovaOcorrencia() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="data">Data *</Label>
-                  <Input
-                    id="data"
-                    type="date"
-                    value={formData.data}
-                    onChange={(e) => setField("data", e.target.value)}
-                    required
-                  />
+                  <Input id="data" type="date" {...register("data")} />
+                  <FieldError message={errors.data?.message} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="hora">Hora *</Label>
-                  <Input
-                    id="hora"
-                    type="time"
-                    value={formData.hora}
-                    onChange={(e) => setField("hora", e.target.value)}
-                    required
-                  />
+                  <Input id="hora" type="time" {...register("hora")} />
+                  <FieldError message={errors.hora?.message} />
                 </div>
               </div>
 
+              {/* Plantonista */}
               <div className="space-y-2">
-                <Label htmlFor="plantonista">Plantonista *</Label>
-                <Select value={formData.plantonista} onValueChange={(v) => setField("plantonista", v)} required>
+                <Label>Plantonista *</Label>
+                <Select
+                  onValueChange={(v) => setValue("plantonista", v, { shouldValidate: true })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o plantonista" />
                   </SelectTrigger>
                   <SelectContent>
-                    {plantonistas.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
-                      </SelectItem>
+                    {PLANTONISTAS.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <FieldError message={errors.plantonista?.message} />
               </div>
 
+              {/* Cliente */}
               <div className="space-y-2">
-                <Label htmlFor="cliente">Cliente/Contrato *</Label>
-                <Select value={formData.cliente} onValueChange={(v) => setField("cliente", v)} required>
+                <Label>Cliente / Contrato *</Label>
+                <Select
+                  onValueChange={(v) => setValue("cliente", v, { shouldValidate: true })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o cliente" />
                   </SelectTrigger>
                   <SelectContent>
                     {clientesData.length > 0
                       ? clientesData.map((c) => (
-                          <SelectItem key={c.id} value={c.nome}>
-                            {c.nome}
-                          </SelectItem>
+                          <SelectItem key={c.id} value={c.nome}>{c.nome}</SelectItem>
                         ))
-                      : ["JEEP","HDH","CBA","VILA GALÉ","MONTE RODOVIAS"].map((c) => (
+                      : ["JEEP", "HDH", "CBA", "VILA GALÉ", "MONTE RODOVIAS"].map((c) => (
                           <SelectItem key={c} value={c}>{c}</SelectItem>
                         ))}
                   </SelectContent>
                 </Select>
+                <FieldError message={errors.cliente?.message} />
               </div>
 
+              {/* Tipo de Ocorrência */}
               <div className="space-y-2">
-                <Label htmlFor="tipo">Tipo de Ocorrência *</Label>
-                <Select 
-                  required 
-                  value={tipoOcorrencia}
-                  onValueChange={setTipoOcorrencia}
+                <Label>Tipo de Ocorrência *</Label>
+                <Select
+                  onValueChange={(v) => {
+                    setValue("tipo_ocorrencia", v, { shouldValidate: true });
+                    // Limpa campos de socorro quando tipo muda
+                    if (v !== "Socorro") {
+                      setValue("tipo_socorro", "");
+                      setValue("descricao_socorro", "");
+                      setValue("horario_socorro", "");
+                      setValue("horario_saida", "");
+                    }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o tipo" />
                   </SelectTrigger>
                   <SelectContent>
-                    {tiposOcorrencia.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
+                    {TIPOS_OCORRENCIA.map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <FieldError message={errors.tipo_ocorrencia?.message} />
               </div>
             </CardContent>
           </Card>
 
-          {/* Veículos */}
+          {/* ── Card 2: Veículos ─────────────────────────────────────────────── */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Veículos Envolvidos</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="veiculoPrevisto">Veículo Previsto *</Label>
+                <Label htmlFor="veiculo_previsto">Veículo Previsto *</Label>
                 <Input
-                  id="veiculoPrevisto"
+                  id="veiculo_previsto"
                   placeholder="Ex: 121904"
-                  value={formData.veiculo_previsto}
-                  onChange={(e) => setField("veiculo_previsto", e.target.value)}
-                  required
+                  {...register("veiculo_previsto")}
                   list="veiculos-list"
                 />
                 <datalist id="veiculos-list">
-                  {veiculosData.map((v) => <option key={v.id} value={v.placa} />)}
+                  {veiculosData.map((v) => (
+                    <option key={v.id} value={v.placa} />
+                  ))}
                 </datalist>
+                <FieldError message={errors.veiculo_previsto?.message} />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="veiculoSubstituido">Veículo Substituído</Label>
+                <Label htmlFor="veiculo_substituto">
+                  Veículo Substituto{" "}
+                  <span className="text-muted-foreground text-xs">(se houve troca)</span>
+                </Label>
                 <Input
-                  id="veiculoSubstituido"
-                  placeholder="Ex: 121928 (se houve troca)"
-                  value={formData.veiculo_substituto}
-                  onChange={(e) => setField("veiculo_substituto", e.target.value)}
+                  id="veiculo_substituto"
+                  placeholder="Ex: 121928"
+                  {...register("veiculo_substituto")}
                   list="veiculos-list"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tipoSocorro">Tipo de Socorro *</Label>
-                <Select
-                  value={tipoSocorro}
-                  onValueChange={(v) => setTipoSocorro(v as TipoSocorroNome)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o tipo de socorro" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIPOS_SOCORRO.map((t) => (
-                      <SelectItem key={t.id} value={t.nome}>
-                        {t.nome}
-                        {t.alertaDiretoria && " ⚠️"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Alerta Pane Seca */}
-              {alertaDiretoria && (
-                <Alert variant="destructive" className="bg-red-50 border-red-300">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Alerta Crítico - Pane Seca</AlertTitle>
-                  <AlertDescription>
-                    Esta é uma falha operacional evitável. A diretoria será notificada automaticamente.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* Alerta Avaria */}
-              {isAvaria && (
-                <Alert className="bg-amber-50 border-amber-300">
-                  <Info className="h-4 w-4 text-amber-600" />
-                  <AlertTitle className="text-amber-800">Sugestão: Workflow de DAI</AlertTitle>
-                  <AlertDescription className="text-amber-700">
-                    Após salvar, considere abrir um novo workflow de DAI em Avarias para iniciar o processo de precificação.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* Campo descrição obrigatório para "Outros" */}
-              {requerDescricao && (
-                <div className="space-y-2">
-                  <Label htmlFor="descricaoSocorro">Descrição do Socorro *</Label>
-                  <Textarea
-                    id="descricaoSocorro"
-                    placeholder="Descreva detalhadamente o tipo de socorro..."
-                    value={descricaoSocorro}
-                    onChange={(e) => setDescricaoSocorro(e.target.value)}
-                    className="min-h-[80px]"
-                    required
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="horarioSocorro">Horário do Socorro</Label>
-                  <Input id="horarioSocorro" type="time" value={formData.horario_socorro} onChange={(e) => setField("horario_socorro", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="horarioSaidaSocorro">Horário Saída Socorro</Label>
-                  <Input id="horarioSaidaSocorro" type="time" value={formData.horario_saida} onChange={(e) => setField("horario_saida", e.target.value)} />
-                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Atraso */}
+          {/* ── Card 3: Socorro — exibido APENAS quando tipo = 'Socorro' ─────── */}
+          {isSocorro && (
+            <Card className="border-orange-200 bg-orange-50/30 lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-lg text-orange-800">
+                  Detalhes do Socorro
+                  <span className="ml-2 text-xs font-normal text-orange-600">
+                    (obrigatório por ser tipo Socorro)
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  {/* Tipo de socorro */}
+                  <div className="space-y-2">
+                    <Label>Tipo de Socorro *</Label>
+                    <Select
+                      onValueChange={(v) =>
+                        setValue("tipo_socorro", v, { shouldValidate: true })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o tipo de socorro" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TIPOS_SOCORRO.map((t) => (
+                          <SelectItem key={t.id} value={t.nome}>
+                            {t.nome}
+                            {t.alertaDiretoria && " ⚠️"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FieldError message={errors.tipo_socorro?.message} />
+                  </div>
+
+                  {/* Horários */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="horario_socorro">Horário do Socorro *</Label>
+                      <Input id="horario_socorro" type="time" {...register("horario_socorro")} />
+                      <FieldError message={errors.horario_socorro?.message} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="horario_saida">Horário Saída</Label>
+                      <Input id="horario_saida" type="time" {...register("horario_saida")} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Descrição para "Outros" */}
+                {requerDescricaoSocorro && (
+                  <div className="space-y-2">
+                    <Label htmlFor="descricao_socorro">Descrição do Socorro *</Label>
+                    <Textarea
+                      id="descricao_socorro"
+                      placeholder='Descreva o tipo de socorro (obrigatório para "Outros")…'
+                      className="min-h-[80px]"
+                      {...register("descricao_socorro")}
+                    />
+                    <FieldError message={errors.descricao_socorro?.message} />
+                  </div>
+                )}
+
+                {/* Alerta Pane Seca */}
+                {alertaDiretoria && (
+                  <Alert variant="destructive" className="bg-red-50 border-red-300">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Alerta Crítico — Pane Seca</AlertTitle>
+                    <AlertDescription>
+                      Esta é uma falha operacional evitável. A diretoria será
+                      notificada automaticamente ao salvar.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Alerta Avaria */}
+                {isAvaria && (
+                  <Alert className="bg-amber-50 border-amber-300">
+                    <Info className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="text-amber-800">Sugestão: Abrir workflow de DAI</AlertTitle>
+                    <AlertDescription className="text-amber-700">
+                      Após salvar, considere abrir um novo workflow de DAI em Avarias
+                      para iniciar o processo de precificação.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Card 4: Atraso ───────────────────────────────────────────────── */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Informações de Atraso</CardTitle>
@@ -344,42 +345,45 @@ export default function NovaOcorrencia() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label htmlFor="houveAtraso">Houve Atraso?</Label>
+                  <Label>Houve Atraso?</Label>
                   <p className="text-sm text-muted-foreground">
                     Marque se a ocorrência causou atraso na operação
                   </p>
                 </div>
                 <Switch
-                  id="houveAtraso"
                   checked={houveAtraso}
-                  onCheckedChange={setHouveAtraso}
+                  onCheckedChange={(v) =>
+                    setValue("houve_atraso", v, { shouldValidate: true })
+                  }
                 />
               </div>
 
               {houveAtraso && (
                 <div className="space-y-2">
-                  <Label htmlFor="tempoAtraso">Tempo de Atraso (HH:MM)</Label>
-                  <Input
-                    id="tempoAtraso"
-                    type="time"
-                    placeholder="Ex: 00:30"
-                    value={formData.tempo_atraso}
-                    onChange={(e) => setField("tempo_atraso", e.target.value)}
-                  />
+                  <Label htmlFor="tempo_atraso">Tempo de Atraso (HH:MM) *</Label>
+                  <Input id="tempo_atraso" type="time" {...register("tempo_atraso")} />
+                  <FieldError message={errors.tempo_atraso?.message} />
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Status e Descrição */}
+          {/* ── Card 5: Status e Descrição ───────────────────────────────────── */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Status e Descrição</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="status">Status *</Label>
-                <Select value={formData.status} onValueChange={(v) => setField("status", v)}>
+                <Label>Status *</Label>
+                <Select
+                  defaultValue="PENDENTE"
+                  onValueChange={(v) =>
+                    setValue("status", v as OcorrenciaFormData["status"], {
+                      shouldValidate: true,
+                    })
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -389,47 +393,46 @@ export default function NovaOcorrencia() {
                     <SelectItem value="CONCLUIDO">Concluído</SelectItem>
                   </SelectContent>
                 </Select>
+                <FieldError message={errors.status?.message} />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="descricao">Descrição Detalhada *</Label>
                 <Textarea
                   id="descricao"
-                  placeholder="Descreva a ocorrência em detalhes..."
+                  placeholder="Descreva a ocorrência em detalhes…"
                   className="min-h-[120px]"
-                  value={formData.descricao}
-                  onChange={(e) => setField("descricao", e.target.value)}
-                  required
+                  {...register("descricao")}
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="aprovador">Aprovador</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione se necessário" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {plantonistas.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <FieldError message={errors.descricao?.message} />
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Actions */}
+        {/* ── Resumo de erros ao tentar submeter ───────────────────────────── */}
+        {Object.keys(errors).length > 0 && (
+          <Alert variant="destructive" className="mt-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Corrija os campos obrigatórios</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc pl-4 space-y-1 text-sm">
+                {Object.values(errors).map((e, i) => (
+                  <li key={i}>{e?.message as string}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* ── Botões ─────────────────────────────────────────────────────────── */}
         <div className="flex justify-end gap-4 mt-6">
           <Button type="button" variant="outline" onClick={() => navigate(-1)}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={createOcorrencia.isPending}>
+          <Button type="submit" disabled={createOcorrencia.isPending || isSubmitting}>
             <Save className="mr-2 h-4 w-4" />
-            {createOcorrencia.isPending ? "Salvando..." : "Salvar Ocorrência"}
+            {createOcorrencia.isPending ? "Salvando…" : "Salvar Ocorrência"}
           </Button>
         </div>
       </form>
