@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../config/database');
 const { enviarRelatorioPlan } = require('../config/email');
+const { criarOcorrencia } = require('../controllers/ocorrenciaController');
 
 // Mock de dados em memória
 let ocorrenciasMemory = [];
@@ -269,175 +270,11 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Criar nova ocorrência (tratando erros do multer explicitamente)
-router.post('/', (req, res, next) => {
-  upload.array('anexos', 10)(req, res, function (err) {
-    if (err instanceof multer.MulterError) {
-      console.error('Erro multer:', err);
-      return res.status(400).json({ message: err.message });
-    } else if (err) {
-      console.error('Erro no upload:', err);
-      return res.status(400).json({ message: err.message || 'Erro no upload de arquivos' });
-    }
-    next();
-  });
-}, async (req, res) => {
-  try {
-    const {
-      cliente_id,
-      cliente_nome,
-      monitor_id,
-      monitor_nome,
-      data_ocorrencia,
-      tipo_ocorrencia,
-      veiculo_placa,
-      houve_troca_veiculo,
-      veiculo_substituto_placa,
-      horario_socorro,
-      horario_saida,
-      houve_atraso,
-      tempo_atraso,
-      descricao,
-      status
-    } = req.body;
+// Criar nova ocorrência — via Supabase com validação (controller)
+router.post('/', criarOcorrencia);
 
-    // Gerar número único de ocorrência
-    const numeroOcorrencia = gerarNumeroOcorrencia();
-
-    console.log('📝 Dados recebidos:', { cliente_nome, veiculo_placa, tipo_ocorrencia, descricao });
-
-    const novaOcorrencia = {
-      id: Date.now(), // ID baseado em timestamp para unicidade
-      numero_ocorrencia: numeroOcorrencia,
-      cliente_id,
-      cliente_nome: cliente_nome || 'N/A',
-      monitor_id,
-      monitor_nome: monitor_nome || 'N/A',
-      data_ocorrencia: data_ocorrencia || new Date().toISOString().split('T')[0],
-      tipo_ocorrencia,
-      veiculo_placa,
-      houve_troca_veiculo,
-      veiculo_substituto_placa: houve_troca_veiculo === 'sim' ? veiculo_substituto_placa : null,
-      horario_socorro,
-      horario_saida,
-      houve_atraso,
-      tempo_atraso: houve_atraso === 'sim' ? tempo_atraso : null,
-      descricao,
-      status,
-      anexos: req.files && Array.isArray(req.files) ? req.files.map(f => ({
-        nome: f.originalname,
-        caminho: f.path,
-        tamanho: f.size,
-        tipo: f.mimetype
-      })) : [],
-      created_at: new Date()
-    };
-
-    // Tentar salvar no banco, usando colunas existentes do schema e convertendo valores
-    try {
-      // Resolver veiculo_id a partir da placa (se fornecida)
-      let veiculoId = null;
-      try {
-        if (veiculo_placa) {
-          const veRes = await db.query('SELECT id FROM veiculos WHERE placa = $1 LIMIT 1', [veiculo_placa]);
-          if (veRes.rows && veRes.rows[0]) veiculoId = veRes.rows[0].id;
-        }
-      } catch (veErr) {
-        console.warn('Aviso: não foi possível resolver veiculo por placa:', veErr.message || veErr);
-      }
-
-      // Resolver tipo_quebra_id a partir do nome ou id (se fornecido como texto)
-      let tipoQuebraId = null;
-      try {
-        if (tipo_ocorrencia) {
-          if (!isNaN(Number(tipo_ocorrencia))) {
-            tipoQuebraId = Number(tipo_ocorrencia);
-          } else {
-            const tRes = await db.query('SELECT id FROM tipos_quebra WHERE LOWER(nome) = LOWER($1) LIMIT 1', [tipo_ocorrencia]);
-            if (tRes.rows && tRes.rows[0]) tipoQuebraId = tRes.rows[0].id;
-          }
-        }
-      } catch (tErr) {
-        console.warn('Aviso: não foi possível resolver tipo_quebra:', tErr.message || tErr);
-      }
-
-      // Normalizar datas
-      const dataQuebra = data_ocorrencia ? new Date(data_ocorrencia) : new Date();
-      const dataChamado = new Date();
-
-      console.log('💾 Inserindo no banco:', { numero: novaOcorrencia.numero_ocorrencia, cliente_id, veiculoId, tipoQuebraId });
-      
-      const result = await db.query(`
-        INSERT INTO ocorrencias 
-          (numero, cliente_id, veiculo_id, tipo_quebra_id, data_quebra, data_chamado, descricao, status, criado_por, observacoes, km, local_quebra)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        RETURNING *
-      `, [
-        novaOcorrencia.numero_ocorrencia,
-        cliente_id || null,
-        veiculoId,
-        tipoQuebraId,
-        dataQuebra,
-        dataChamado,
-        descricao || 'Sem descrição',
-        status || 'pendente',
-        monitor_id || null,
-        JSON.stringify({ 
-          cliente_nome, 
-          tipo_ocorrencia, 
-          veiculo_placa, 
-          horario_socorro, 
-          horario_saida,
-          houve_troca_veiculo,
-          veiculo_substituto_placa,
-          houve_atraso,
-          tempo_atraso,
-          monitor_nome
-        }),
-        null,
-        null
-      ]);
-
-      console.log('📦 Dados salvos no observacoes:', { 
-        horario_socorro, 
-        horario_saida,
-        houve_troca_veiculo,
-        houve_atraso 
-      });
-
-      // Salvar anexos no banco (se houver)
-      if (req.files && req.files.length > 0) {
-        for (const file of req.files) {
-          try {
-            await db.query(`
-              INSERT INTO ocorrencia_anexos (ocorrencia_id, nome_arquivo, caminho, tamanho_bytes, tipo_arquivo)
-              VALUES ($1, $2, $3, $4, $5)
-            `, [result.rows[0].id, file.originalname, file.path, file.size, file.mimetype]);
-          } catch (attachErr) {
-            console.error('Erro ao salvar anexo no banco:', attachErr, 'file:', file.path);
-          }
-        }
-      }
-
-      console.log(`✅ Ocorrência ${result.rows[0].numero} criada com sucesso no banco de dados`);
-      res.status(201).json(result.rows[0]);
-    } catch (dbError) {
-      console.log('📝 Salvando ocorrência em memória (banco indisponível)');
-      console.error('Detalhes do erro do banco:', dbError.message);
-      ocorrenciasMemory.push(novaOcorrencia);
-      saveOcorrencias(ocorrenciasMemory); // Salvar no arquivo
-      res.status(201).json(novaOcorrencia);
-    }
-  } catch (error) {
-    console.error('❌ Erro ao criar ocorrência:', error);
-    console.error('Stack trace:', error.stack);
-    res.status(500).json({ 
-      message: 'Erro ao criar ocorrência',
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
+// LEGADO REMOVIDO — campos extras agora têm colunas dedicadas na tabela.
+// Ver migration: add_ocorrencias_socorro_fields.sql.
 
 // Atualizar ocorrência
 router.put('/:id', async (req, res) => {
