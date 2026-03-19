@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const veiculoStatus = require('../services/veiculoStatusService');
+const { registrarCarroVisitante } = require('../controllers/portariaVisitanteController');
+const { registrarVisitante } = require('../controllers/portariaVisitantePedestreController');
 
 const tableExists = async (tableName) => {
   const result = await db.query(
@@ -170,7 +173,10 @@ router.post('/entradas', async (req, res) => {
       mapField(['tipo_movimentacao', 'tipo', 'movimento'], 'ENTRADA');
 
       const result = await insertDynamic('portaria_movimentacoes', payload);
-      return res.status(201).json(mapEntrada(result.rows[0]));
+      const row = result.rows[0];
+      const vid = req.body.veiculo_id || row.veiculo_id;
+      if (vid) veiculoStatus.onEntradaPortaria(Number(vid)).catch(e => console.warn('[portaria] status entrada:', e.message));
+      return res.status(201).json(mapEntrada(row));
     }
 
     return res.status(500).json({ error: 'Nenhuma tabela de portaria encontrada no banco' });
@@ -216,7 +222,10 @@ router.post('/saidas', async (req, res) => {
       mapField(['tipo_movimentacao', 'tipo', 'movimento'], 'SAIDA');
 
       const result = await insertDynamic('portaria_movimentacoes', payload);
-      return res.status(201).json(mapSaida(result.rows[0]));
+      const row = result.rows[0];
+      const vid = req.body.veiculo_id || row.veiculo_id;
+      if (vid) veiculoStatus.onSaidaPortaria(Number(vid)).catch(e => console.warn('[portaria] status saída:', e.message));
+      return res.status(201).json(mapSaida(row));
     }
 
     return res.status(500).json({ error: 'Nenhuma tabela de portaria encontrada no banco' });
@@ -261,5 +270,11 @@ router.delete('/saidas/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// POST /api/portaria/carro-visitante — Carro visitante (externo ou empresa)
+router.post('/carro-visitante', registrarCarroVisitante);
+
+// POST /api/portaria/visitante — Visitante pedestre
+router.post('/visitante', registrarVisitante);
 
 module.exports = router;

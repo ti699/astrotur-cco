@@ -1,6 +1,59 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const { supabase } = require('../config/supabase');
+const veiculoStatus = require('../services/veiculoStatusService');
+
+// GET /veiculos/status — Status atual de todos os veículos ativos
+// IMPORTANTE: deve ficar ANTES de /:id
+router.get('/status', async (req, res) => {
+  const { data, error } = await supabase
+    .from('veiculos')
+    .select('id, numero_frota, placa, modelo, status, clientes!cliente_id ( id, nome )')
+    .eq('ativo', true)
+    .order('numero_frota', { ascending: true });
+
+  if (error) return res.status(500).json({ erro: error.message });
+
+  const agrupado = {
+    NA_GARAGEM:    data.filter(v => v.status === 'NA_GARAGEM'),
+    EM_OPERACAO:   data.filter(v => v.status === 'EM_OPERACAO'),
+    EM_MANUTENCAO: data.filter(v => v.status === 'EM_MANUTENCAO'),
+  };
+
+  return res.status(200).json({
+    veiculos: data,
+    resumo: {
+      total:          data.length,
+      na_garagem:     agrupado.NA_GARAGEM.length,
+      em_operacao:    agrupado.EM_OPERACAO.length,
+      em_manutencao:  agrupado.EM_MANUTENCAO.length,
+    },
+    agrupado,
+  });
+});
+
+// POST /veiculos/recalcular-status — Recalcula status de todos os veículos ativos
+router.post('/recalcular-status', async (req, res) => {
+  const { data: veiculos, error } = await supabase
+    .from('veiculos')
+    .select('id, numero_frota')
+    .eq('ativo', true);
+
+  if (error) return res.status(500).json({ erro: error.message });
+
+  const resultados = [];
+  for (const v of veiculos) {
+    try {
+      const novoStatus = await veiculoStatus.recalcularStatus(v.id);
+      resultados.push({ id: v.id, numero_frota: v.numero_frota, status: novoStatus });
+    } catch (err) {
+      resultados.push({ id: v.id, numero_frota: v.numero_frota, erro: err.message });
+    }
+  }
+
+  return res.status(200).json({ total: resultados.length, resultados });
+});
 
 router.get('/', async (req, res) => {
   try {
