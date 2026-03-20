@@ -5,7 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../config/database');
 const { enviarRelatorioPlan } = require('../config/email');
-const { criarOcorrencia } = require('../controllers/ocorrenciaController');
+const { criarOcorrencia, listarOcorrencias, atualizarAndamento, uploadFoto, gerarOsPdf } = require('../controllers/ocorrenciaController');
+const uploadMemory = require('../middlewares/upload');
 
 // Mock de dados em memória
 let ocorrenciasMemory = [];
@@ -133,44 +134,8 @@ const upload = multer({
   }
 });
 
-// Listar todas as ocorrências
-router.get('/', async (req, res) => {
-  try {
-    let ocorrencias;
-    
-    try {
-      const result = await db.query(`
-        SELECT 
-          o.*,
-          o.numero as numero_ocorrencia,
-          o.data_quebra as data_ocorrencia,
-          COALESCE(c.nome, (o.observacoes::json->>'cliente_nome')) as cliente_nome,
-          COALESCE(v.placa, (o.observacoes::json->>'veiculo_placa')) as veiculo_placa,
-          v.modelo,
-          COALESCE(tq.nome, (o.observacoes::json->>'tipo_ocorrencia')) as tipo_ocorrencia,
-          tq.nome as tipo_quebra_nome,
-          u.nome as criado_por_nome
-        FROM ocorrencias o
-        LEFT JOIN clientes c ON o.cliente_id = c.id
-        LEFT JOIN veiculos v ON o.veiculo_id = v.id
-        LEFT JOIN tipos_quebra tq ON o.tipo_quebra_id = tq.id
-        LEFT JOIN usuarios u ON o.criado_por = u.id
-        ORDER BY o.created_at DESC
-      `);
-      ocorrencias = result.rows;
-      console.log(`📋 ${ocorrencias.length} ocorrências encontradas no banco de dados`);
-    } catch (dbError) {
-      console.log('📝 Usando ocorrências da memória (banco indisponível)');
-      console.error('Erro do banco:', dbError.message);
-      ocorrencias = ocorrenciasMemory;
-    }
-
-    res.json(ocorrencias);
-  } catch (error) {
-    console.error('Erro ao listar ocorrências:', error);
-    res.status(500).json({ message: 'Erro ao listar ocorrências' });
-  }
-});
+// GET / — Listar ocorrências com filtros combinados e paginação
+router.get('/', listarOcorrencias);
 
 // Buscar ocorrência por ID
 router.get('/:id', async (req, res) => {
@@ -549,5 +514,14 @@ router.get('/anexo/:ocorrenciaId/:anexoId/view', async (req, res) => {
 router.getOcorrenciasMemory = function() {
   return ocorrenciasMemory;
 };
+
+// PATCH /api/ocorrencias/:id/andamento — Alterar status da ocorrência
+router.patch('/:id/andamento', atualizarAndamento);
+
+// POST /api/ocorrencias/:id/foto — Upload de foto para o Supabase Storage
+router.post('/:id/foto', uploadMemory.single('foto'), uploadFoto);
+
+// GET /api/ocorrencias/:id/os-pdf — Gerar PDF da O.S. de Socorro
+router.get('/:id/os-pdf', gerarOsPdf);
 
 module.exports = router;

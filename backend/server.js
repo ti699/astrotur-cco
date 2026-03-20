@@ -65,6 +65,19 @@ app.use('/api/tipos-quebra', require('./routes/tipos-quebra'));
 app.use('/api/relatorios', require('./routes/relatorios'));
 app.use('/api/plantonistas', require('./routes/plantonistas'));
 
+// Lookup endpoints (Supabase) — para popular selects dos formulários
+const lookupRouter = require('./routes/lookup');
+app.use('/api/lookup', lookupRouter);
+
+// ASTRO — módulo de chamados de socorro
+app.use('/api/v1/socorro', require('./routes/socorro'));
+
+// Portaria v1 — endpoints versionados com regras de negócio completas
+app.use('/api/v1/portaria', require('./routes/portaria-v1'));
+
+// E-mail — envio de relatórios com PDF anexado
+app.use('/api/email', require('./routes/email'));
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Sistema CCO API is running' });

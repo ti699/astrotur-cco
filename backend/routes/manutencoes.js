@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const veiculoStatus = require('../services/veiculoStatusService');
 
 // Listar todas as manutenções
 router.get('/', async (req, res) => {
@@ -55,7 +56,13 @@ router.post('/', async (req, res) => {
       [veiculo_id, tipo, descricao, responsavel || null, 'ABERTA', km_entrada || 0, custo || 0]
     );
 
-    res.status(201).json(result.rows[0]);
+    const novaManutencao = result.rows[0];
+    // Atualizar status do veículo para EM_MANUTENCAO
+    if (novaManutencao.veiculo_id) {
+      veiculoStatus.onManutencaoCriada(novaManutencao.veiculo_id)
+        .catch(e => console.warn('[manutencoes] status criada:', e.message));
+    }
+    res.status(201).json(novaManutencao);
   } catch (error) {
     console.error('Erro ao criar manutenção:', error);
     res.status(500).json({ message: 'Erro ao criar manutenção' });
@@ -117,7 +124,13 @@ router.patch('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Manutenção não encontrada' });
     }
 
-    res.json(result.rows[0]);
+    const updated = result.rows[0];
+    // Se a manutenção foi concluída, recalcular status do veículo
+    if (req.body.status === 'CONCLUIDA' && updated.veiculo_id) {
+      veiculoStatus.onManutencaoConcluida(updated.veiculo_id)
+        .catch(e => console.warn('[manutencoes] status concluida:', e.message));
+    }
+    res.json(updated);
   } catch (error) {
     console.error('Erro ao atualizar manutenção:', error);
     res.status(500).json({ message: 'Erro ao atualizar manutenção' });
