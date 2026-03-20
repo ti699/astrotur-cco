@@ -16,12 +16,13 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import api from "@/services/api";
 
-type ManutencaoStatus = "ABERTA" | "EM_ANDAMENTO" | "CONCLUIDA";
+type ManutencaoStatus = "PENDENTE" | "EM_ANDAMENTO" | "CONCLUIDA";
 
 interface Manutencao {
   id: number;
+  veiculo_id: number;
   veiculo: string;
   tipo: string;
   descricao: string;
@@ -35,11 +36,11 @@ interface Manutencao {
 
 const getStatusBadge = (status: ManutencaoStatus) => {
   const map = {
-    ABERTA: { cls: "bg-red-100 text-red-800", label: "Aberta", icon: AlertTriangle },
+    PENDENTE: { cls: "bg-red-100 text-red-800", label: "Pendente", icon: AlertTriangle },
     EM_ANDAMENTO: { cls: "bg-amber-100 text-amber-800", label: "Em Andamento", icon: Clock },
     CONCLUIDA: { cls: "bg-green-100 text-green-800", label: "Concluída", icon: CheckCircle },
   };
-  const info = map[status];
+  const info = map[status] ?? { cls: "bg-gray-100 text-gray-800", label: status, icon: Clock };
   const Icon = info.icon;
   return <Badge className={`${info.cls} hover:${info.cls} gap-1`}><Icon className="h-3 w-3" />{info.label}</Badge>;
 };
@@ -47,6 +48,7 @@ const getStatusBadge = (status: ManutencaoStatus) => {
 export default function Manutencao() {
   const { toast } = useToast();
   const [manutencoes, setManutencoes] = useState<Manutencao[]>([]);
+  const [veiculosList, setVeiculosList] = useState<{ id: number; placa: string; numero_frota?: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -54,27 +56,36 @@ export default function Manutencao() {
   const [detalhesOpen, setDetalhesOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<Manutencao | null>(null);
-  const [form, setForm] = useState({ veiculo: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
+  const [form, setForm] = useState({ veiculo_id: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
 
   const mapRow = (r: Record<string, unknown>): Manutencao => ({
     id: r.id as number,
-    veiculo: (r.veiculo as string) || '',
+    veiculo_id: r.veiculo_id as number,
+    veiculo: (r.veiculo_placa as string) || (r.veiculo_frota as string) || String(r.veiculo_id || ''),
     tipo: (r.tipo as string) || 'Preventiva',
     descricao: (r.descricao as string) || '',
     dataAbertura: (r.data_abertura as string) || '',
     dataConclusao: (r.data_conclusao as string) || undefined,
     responsavel: (r.responsavel as string) || '',
-    status: ((r.status as string) || 'ABERTA') as ManutencaoStatus,
+    status: ((r.status as string) || 'PENDENTE') as ManutencaoStatus,
     custo: r.custo as number | undefined,
     kmEntrada: (r.km_entrada as number) || 0,
   });
 
-  // Carregar manutencoes do Supabase
+  // Carregar manutencoes e veiculos via API
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase.from('manutencoes').select('*').order('created_at', { ascending: false });
-      if (!error) setManutencoes((data || []).map(mapRow));
+      try {
+        const [{ data: mData }, { data: vData }] = await Promise.all([
+          api.get('/manutencoes'),
+          api.get('/veiculos'),
+        ]);
+        setManutencoes((mData || []).map(mapRow));
+        setVeiculosList(vData || []);
+      } catch (e) {
+        console.error('Erro ao carregar dados:', e);
+      }
       setLoading(false);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,56 +101,52 @@ export default function Manutencao() {
 
   const stats = useMemo(() => ({
     total: filtered.length,
-    abertas: filtered.filter((m) => m.status === "ABERTA").length,
+    abertas: filtered.filter((m) => m.status === "PENDENTE").length,
     emAndamento: filtered.filter((m) => m.status === "EM_ANDAMENTO").length,
     concluidas: filtered.filter((m) => m.status === "CONCLUIDA").length,
   }), [filtered]);
 
   const handleCriar = async () => {
     try {
-      const { data: row, error } = await supabase.from('manutencoes').insert({
-        veiculo: form.veiculo,
+      const { data: row } = await api.post('/manutencoes', {
+        veiculo_id: parseInt(form.veiculo_id) || undefined,
         tipo: form.tipo,
         descricao: form.descricao,
         responsavel: form.responsavel,
         km_entrada: parseInt(form.kmEntrada) || 0,
-        status: 'ABERTA',
-        data_abertura: new Date().toISOString().split('T')[0],
-      }).select().single();
-      if (error) throw error;
+      });
       setManutencoes((prev) => [mapRow(row), ...prev]);
-      toast({ title: "Manutencao registrada!", description: `Veiculo #${form.veiculo} enviado para manutencao.` });
+      const placa = veiculosList.find((v) => v.id === parseInt(form.veiculo_id))?.placa || form.veiculo_id;
+      toast({ title: "Manutenção registrada!", description: `Veículo ${placa} enviado para manutenção.` });
       setNovaOpen(false);
-      setForm({ veiculo: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
+      setForm({ veiculo_id: "", tipo: "Preventiva", descricao: "", responsavel: "", kmEntrada: "" });
     } catch (error) {
-      toast({ title: "Erro ao criar manutencao", variant: "destructive" });
+      toast({ title: "Erro ao criar manutenção", variant: "destructive" });
       console.error(error);
     }
   };
 
   const handleConcluir = async (m: Manutencao) => {
     try {
-      const { data: row, error } = await supabase.from('manutencoes').update({
+      const { data: row } = await api.patch(`/manutencoes/${m.id}`, {
         status: 'CONCLUIDA',
         data_conclusao: new Date().toISOString().split('T')[0],
-      }).eq('id', m.id).select().single();
-      if (error) throw error;
+      });
       setManutencoes((prev) => prev.map((x) => x.id === m.id ? mapRow(row) : x));
-      toast({ title: "Manutencao concluida!", description: `Veiculo #${m.veiculo} liberado.` });
+      toast({ title: "Manutenção concluída!", description: `Veículo ${m.veiculo} liberado.` });
     } catch (error) {
-      toast({ title: "Erro ao concluir manutencao", variant: "destructive" });
+      toast({ title: "Erro ao concluir manutenção", variant: "destructive" });
       console.error(error);
     }
   };
 
   const handleIniciar = async (m: Manutencao) => {
     try {
-      const { data: row, error } = await supabase.from('manutencoes').update({ status: 'EM_ANDAMENTO' }).eq('id', m.id).select().single();
-      if (error) throw error;
+      const { data: row } = await api.patch(`/manutencoes/${m.id}`, { status: 'EM_ANDAMENTO' });
       setManutencoes((prev) => prev.map((x) => x.id === m.id ? mapRow(row) : x));
-      toast({ title: "Manutencao iniciada", description: `Veiculo #${m.veiculo} em manutencao.` });
+      toast({ title: "Manutenção iniciada", description: `Veículo ${m.veiculo} em manutenção.` });
     } catch (error) {
-      toast({ title: "Erro ao iniciar manutencao", variant: "destructive" });
+      toast({ title: "Erro ao iniciar manutenção", variant: "destructive" });
       console.error(error);
     }
   };
@@ -181,7 +188,12 @@ export default function Manutencao() {
           <DialogHeader><DialogTitle>Nova Manutenção</DialogTitle><DialogDescription>Registre uma nova manutenção. O status do veículo será alterado automaticamente.</DialogDescription></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Veículo *</Label><Input value={form.veiculo} onChange={(e) => setForm((p) => ({ ...p, veiculo: e.target.value }))} placeholder="Ex: 121904" /></div>
+              <div className="space-y-2"><Label>Veículo *</Label>
+                <Select value={form.veiculo_id} onValueChange={(v) => setForm((p) => ({ ...p, veiculo_id: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o veículo" /></SelectTrigger>
+                  <SelectContent>{veiculosList.map((v) => <SelectItem key={v.id} value={String(v.id)}>{v.placa}{v.numero_frota ? ` - ${v.numero_frota}` : ''}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2"><Label>KM Entrada</Label><Input type="number" value={form.kmEntrada} onChange={(e) => setForm((p) => ({ ...p, kmEntrada: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -192,7 +204,7 @@ export default function Manutencao() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNovaOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCriar}><Wrench className="mr-2 h-4 w-4" />Registrar</Button>
+          <Button onClick={handleCriar}><Wrench className="mr-2 h-4 w-4" />Registrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -218,7 +230,7 @@ export default function Manutencao() {
       <Card><CardContent className="p-4">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Buscar veículo ou descrição..." className="pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="ABERTA">Abertas</SelectItem><SelectItem value="EM_ANDAMENTO">Em Andamento</SelectItem><SelectItem value="CONCLUIDA">Concluídas</SelectItem></SelectContent></Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="PENDENTE">Pendentes</SelectItem><SelectItem value="EM_ANDAMENTO">Em Andamento</SelectItem><SelectItem value="CONCLUIDA">Concluídas</SelectItem></SelectContent></Select>
         </div>
       </CardContent></Card>
 
@@ -239,7 +251,7 @@ export default function Manutencao() {
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleView(m)}><Eye className="mr-2 h-4 w-4" />Detalhes</DropdownMenuItem>
-                      {m.status === "ABERTA" && <DropdownMenuItem onClick={() => handleIniciar(m)}><Wrench className="mr-2 h-4 w-4" />Iniciar</DropdownMenuItem>}
+                {m.status === "PENDENTE" && <DropdownMenuItem onClick={() => handleIniciar(m)}><Wrench className="mr-2 h-4 w-4" />Iniciar</DropdownMenuItem>}
                       {m.status === "EM_ANDAMENTO" && <DropdownMenuItem onClick={() => handleConcluir(m)}><CheckCircle className="mr-2 h-4 w-4" />Concluir</DropdownMenuItem>}
                     </DropdownMenuContent>
                   </DropdownMenu>

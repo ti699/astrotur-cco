@@ -18,7 +18,7 @@ import { ConfirmarExclusaoDialog } from "@/components/shared/ConfirmarExclusaoDi
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import api from "@/services/api";
 
 const initialMotoristas: any[] = [];
 
@@ -58,12 +58,16 @@ export default function Motoristas() {
     cnhAlerta: false,
   });
 
-  // Load motoristas from Supabase
+  // Load motoristas via backend API
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase.from('motoristas').select('*').order('nome', { ascending: true });
-      if (!error) setMotoristas((data || []).map((r) => mapRow(r as Record<string, unknown>)));
+      try {
+        const { data } = await api.get('/motoristas');
+        setMotoristas((data || []).map((r: Record<string, unknown>) => mapRow(r)));
+      } catch (e) {
+        console.error('Erro ao carregar motoristas:', e);
+      }
       setLoading(false);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,16 +95,15 @@ export default function Motoristas() {
 
   const confirmNovo = async () => {
     try {
-      const { data: row, error } = await supabase.from('motoristas').insert({
+      const { data: row } = await api.post('/motoristas', {
         nome: novoForm.nome,
         matricula: novoForm.matricula,
         cpf: novoForm.cpf,
         cnh: novoForm.cnh,
-        cnh_validade: novoForm.cnhValidade,
+        cnhValidade: novoForm.cnhValidade,
         telefone: novoForm.telefone,
         status: novoForm.status,
-      }).select().single();
-      if (error) throw error;
+      });
       setMotoristas((prev) => [mapRow(row as Record<string, unknown>), ...prev]);
       toast({ title: "Motorista cadastrado!", description: novoForm.nome });
       setNovoOpen(false);
@@ -114,13 +117,11 @@ export default function Motoristas() {
   const confirmEdit = async () => {
     if (!selected) return;
     try {
-      const { data: row, error } = await supabase
-        .from('motoristas')
-        .update({ nome: editForm.nome, telefone: editForm.telefone, status: editForm.status })
-        .eq('id', selected.id)
-        .select()
-        .single();
-      if (error) throw error;
+      const { data: row } = await api.patch(`/motoristas/${selected.id}`, {
+        nome: editForm.nome,
+        telefone: editForm.telefone,
+        status: editForm.status,
+      });
       setMotoristas((prev) => prev.map((m) => m.id === selected.id ? mapRow(row as Record<string, unknown>) : m));
       toast({ title: "Motorista atualizado!" });
       setEditOpen(false);
@@ -133,8 +134,7 @@ export default function Motoristas() {
   const confirmDelete = async () => {
     if (!selected) return;
     try {
-      const { error } = await supabase.from('motoristas').update({ status: 'DESLIGADO' }).eq('id', selected.id);
-      if (error) throw error;
+      await api.patch(`/motoristas/${selected.id}`, { status: 'DESLIGADO' });
       setMotoristas((prev) => prev.map((m) => m.id === selected.id ? { ...m, status: 'DESLIGADO' } : m));
       toast({ title: "Motorista desativado" });
       setExcluirOpen(false);

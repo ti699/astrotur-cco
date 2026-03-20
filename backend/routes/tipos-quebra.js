@@ -38,7 +38,7 @@ router.post('/', async (req, res) => {
     }
 
     const result = await db.query(
-      `INSERT INTO tipos_quebra (nome, descricao, ativo, createdAt)
+      `INSERT INTO tipos_quebra (nome, descricao, ativo, created_at)
        VALUES ($1, $2, $3, NOW())
        RETURNING *`,
       [nome, descricao || null, ativo !== false]

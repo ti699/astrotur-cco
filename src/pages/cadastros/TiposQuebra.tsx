@@ -29,7 +29,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import api from "@/services/api";
 
 interface TipoQuebra {
   id: number;
@@ -67,12 +67,16 @@ export default function TiposQuebra() {
     createdAt: (r.created_at as string) || '',
   });
 
-  // Load tipos from Supabase
+  // Load tipos from API
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase.from('tipos_quebra').select('*').order('nome', { ascending: true });
-      if (!error) setTipos((data || []).map((r) => mapRow(r as Record<string, unknown>)));
+      try {
+        const { data } = await api.get('/tipos-quebra');
+        setTipos((data || []).map((r: Record<string, unknown>) => mapRow(r)));
+      } catch (e) {
+        console.error('Erro ao carregar tipos:', e);
+      }
       setLoading(false);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,22 +92,19 @@ export default function TiposQuebra() {
     e.preventDefault();
     try {
       if (editingTipo) {
-        const { data: row, error } = await supabase
-          .from('tipos_quebra')
-          .update({ nome: formData.nome, descricao: formData.descricao, ativo: formData.ativo })
-          .eq('id', editingTipo.id)
-          .select()
-          .single();
-        if (error) throw error;
+        const { data: row } = await api.patch(`/tipos-quebra/${editingTipo.id}`, {
+          nome: formData.nome,
+          descricao: formData.descricao,
+          ativo: formData.ativo,
+        });
         setTipos((prev) => prev.map((t) => t.id === editingTipo.id ? mapRow(row as Record<string, unknown>) : t));
         toast({ title: "Tipo atualizado!", description: `${formData.nome} foi atualizado com sucesso.` });
       } else {
-        const { data: row, error } = await supabase
-          .from('tipos_quebra')
-          .insert({ nome: formData.nome, descricao: formData.descricao, ativo: formData.ativo })
-          .select()
-          .single();
-        if (error) throw error;
+        const { data: row } = await api.post('/tipos-quebra', {
+          nome: formData.nome,
+          descricao: formData.descricao,
+          ativo: formData.ativo,
+        });
         setTipos((prev) => [...prev, mapRow(row as Record<string, unknown>)]);
         toast({ title: "Tipo cadastrado!", description: `${formData.nome} foi adicionado com sucesso.` });
       }
@@ -128,8 +129,7 @@ export default function TiposQuebra() {
 
   const handleDelete = async (id: number) => {
     try {
-      const { error } = await supabase.from('tipos_quebra').delete().eq('id', id);
-      if (error) throw error;
+      await api.delete(`/tipos-quebra/${id}`);
       setTipos((prev) => prev.filter((t) => t.id !== id));
       toast({ title: "Tipo excluído", description: "O tipo de quebra foi removido com sucesso." });
     } catch (error) {
@@ -140,13 +140,7 @@ export default function TiposQuebra() {
 
   const handleToggleAtivo = async (tipo: TipoQuebra) => {
     try {
-      const { data: row, error } = await supabase
-        .from('tipos_quebra')
-        .update({ ativo: !tipo.ativo })
-        .eq('id', tipo.id)
-        .select()
-        .single();
-      if (error) throw error;
+      const { data: row } = await api.patch(`/tipos-quebra/${tipo.id}`, { ativo: !tipo.ativo });
       setTipos((prev) => prev.map((t) => (t.id === tipo.id ? mapRow(row as Record<string, unknown>) : t)));
     } catch (error) {
       console.error("Erro ao atualizar tipo:", error);

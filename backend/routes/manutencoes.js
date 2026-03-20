@@ -7,10 +7,12 @@ const veiculoStatus = require('../services/veiculoStatusService');
 router.get('/', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, veiculo_id, tipo, descricao, responsavel, status, 
-              km_entrada, custo, data_abertura, data_conclusao, created_at, updated_at
-       FROM manutencoes
-       ORDER BY created_at DESC`
+      `SELECT m.*,
+              v.placa        AS veiculo_placa,
+              v.numero_frota AS veiculo_frota
+       FROM manutencoes m
+       LEFT JOIN veiculos v ON v.id = m.veiculo_id
+       ORDER BY m.created_at DESC`
     );
     res.json(result.rows);
   } catch (error) {
@@ -53,7 +55,7 @@ router.post('/', async (req, res) => {
       `INSERT INTO manutencoes (veiculo_id, tipo, descricao, responsavel, status, km_entrada, custo, data_abertura)
        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
        RETURNING id, veiculo_id, tipo, descricao, responsavel, status, km_entrada, custo, data_abertura, created_at, updated_at`,
-      [veiculo_id, tipo, descricao, responsavel || null, 'ABERTA', km_entrada || 0, custo || 0]
+      [veiculo_id, tipo, descricao, responsavel || null, 'PENDENTE', km_entrada || 0, custo || 0]
     );
 
     const novaManutencao = result.rows[0];
