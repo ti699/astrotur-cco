@@ -344,22 +344,17 @@ async function gerarOsPdf(req, res) {
 
 // ─── Listar ocorrências com filtros combinados ───────────────────────────────
 async function listarOcorrencias(req, res) {
-  function toArray(valor) {
-    if (!valor) return [];
-    return Array.isArray(valor) ? valor : [valor];
-  }
+  const { toArray, toArrayInt, parsePagination } = require('../utils/queryHelpers');
 
   const status    = toArray(req.query.status);
   const tipos     = toArray(req.query.tipo);
-  const clientes  = toArray(req.query.cliente_id).map(Number).filter(n => !isNaN(n));
-  const monitores = toArray(req.query.monitor_id).map(Number).filter(n => !isNaN(n));
+  const clientes  = toArrayInt(req.query.cliente_id);
+  const monitores = toArrayInt(req.query.monitor_id);
   const busca      = req.query.busca     || null;
   const dataInicio = req.query.data_inicio || null;
   const dataFim    = req.query.data_fim    || null;
 
-  const pagina = Math.max(1, parseInt(req.query.pagina) || 1);
-  const limite = Math.min(100, Math.max(1, parseInt(req.query.limite) || 20));
-  const offset = (pagina - 1) * limite;
+  const { pagina, limite, offset } = parsePagination(req.query);
 
   let query = supabase
     .from('ocorrencias')

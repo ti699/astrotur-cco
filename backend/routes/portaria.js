@@ -2,8 +2,13 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const veiculoStatus = require('../services/veiculoStatusService');
-const { registrarCarroVisitante } = require('../controllers/portariaVisitanteController');
-const { registrarVisitante } = require('../controllers/portariaVisitantePedestreController');
+const {
+  registrarCarroVisitante,
+  registrarVisitante,
+  listarMovimentacoes,
+  listarCarrosVisitantes,
+  listarVisitantesPedestres,
+} = require('../controllers/portariaController');
 
 const tableExists = async (tableName) => {
   const result = await db.query(
@@ -270,6 +275,20 @@ router.delete('/saidas/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ─── GETs ─────────────────────────────────────────────────────────────────
+// IMPORTANTE: rotas estáticas devem vir ANTES de qualquer rota com :id
+
+// GET /api/portaria/movimentacoes — frota (ENTRADA / SAIDA)
+router.get('/movimentacoes',        listarMovimentacoes);
+
+// GET /api/portaria/carros-visitantes — VISITANTE_EXTERNO e VISITANTE_EMPRESA
+router.get('/carros-visitantes',    listarCarrosVisitantes);
+
+// GET /api/portaria/visitantes-pedestres — tabela portaria_visitantes
+router.get('/visitantes-pedestres', listarVisitantesPedestres);
+
+// ─── POSTs ────────────────────────────────────────────────────────────────
 
 // POST /api/portaria/carro-visitante — Carro visitante (externo ou empresa)
 router.post('/carro-visitante', registrarCarroVisitante);
