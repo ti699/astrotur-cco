@@ -12,23 +12,36 @@ const app = express();
 
 // Configuração de CORS com segurança
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
   'http://localhost:5173',
   'http://localhost:5000',
   'http://localhost:3000',
+  // Domínio de produção do frontend (Vercel)
+  'https://astrotur-cco.vercel.app',
 ];
 
-// Em produção, adiciona domínios da Vercel se existirem
+// Adiciona FRONTEND_URL do env se definido (ex: URL customizada ou preview)
+if (process.env.FRONTEND_URL) {
+  const urls = process.env.FRONTEND_URL.split(',').map(u => u.trim()).filter(Boolean);
+  urls.forEach(u => { if (!allowedOrigins.includes(u)) allowedOrigins.push(u); });
+}
+
+// Em produção, adiciona a própria URL do backend na Vercel (VERCEL_URL = backend)
 if (process.env.VERCEL_URL) {
   allowedOrigins.push(`https://${process.env.VERCEL_URL}`);
 }
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Permite requisições sem origin (mobile apps, curl, etc)
+    // Permite requisições sem origin (mobile apps, curl, Postman, etc)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.some(allowed => origin.includes(allowed))) {
+
+    const allowed =
+      allowedOrigins.includes(origin) ||
+      // Aceita qualquer subdomínio *.vercel.app (preview deployments)
+      /^https:\/\/[a-z0-9-]+-[a-z0-9]+(-[a-z0-9]+)*\.vercel\.app$/.test(origin) ||
+      origin === 'https://astrotur-cco.vercel.app';
+
+    if (allowed) {
       callback(null, true);
     } else {
       console.warn(`⚠️ CORS bloqueado para origem: ${origin}`);
