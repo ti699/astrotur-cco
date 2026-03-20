@@ -17,7 +17,8 @@ import { DetalhesDialog } from "@/components/shared/DetalhesDialog";
 import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 import { DashboardLocalizacaoVeiculos } from "@/components/portaria/DashboardLocalizacaoVeiculos";
 import { FiltroEntradasCompacto } from "@/components/portaria/FiltroEntradasCompacto";
 import { FiltroSaidasCompacto } from "@/components/portaria/FiltroSaidasCompacto";
@@ -136,17 +137,21 @@ export default function Portaria() {
   // Form state: Saída
   const [formSaida, setFormSaida] = useState({ dataHora: new Date().toISOString().slice(0, 16), monitor: "", veiculo: "", kmSaida: "", motorista: "", destino: "", vistoriaConforme: "sim", observacoes: "" });
 
-  // Load entradas and saidas from Supabase
+  // Load entradas and saidas from backend API
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('portaria_movimentacoes')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        setEntradas(data.filter((r) => r.tipo === 'entrada').map(normalizeEntrada));
-        setSaidas(data.filter((r) => r.tipo === 'saida').map(normalizeSaida));
+      try {
+        const [resEntradas, resSaidas] = await Promise.all([
+          fetch(`${API_URL}/api/portaria/entradas`),
+          fetch(`${API_URL}/api/portaria/saidas`),
+        ]);
+        const entradasData = resEntradas.ok ? await resEntradas.json() : [];
+        const saidasData   = resSaidas.ok  ? await resSaidas.json()   : [];
+        setEntradas(Array.isArray(entradasData) ? entradasData.map(normalizeEntrada) : []);
+        setSaidas(Array.isArray(saidasData)     ? saidasData.map(normalizeSaida)     : []);
+      } catch (e) {
+        console.error('Erro ao carregar portaria:', e);
       }
       setLoading(false);
     })();
@@ -183,21 +188,25 @@ export default function Portaria() {
       return;
     }
     try {
-      const { data: row, error } = await supabase.from('portaria_movimentacoes').insert({
-        tipo: 'entrada',
-        data_hora: formEntrada.dataHora ? new Date(formEntrada.dataHora).toISOString() : new Date().toISOString(),
-        monitor: formEntrada.monitor,
-        veiculo: formEntrada.veiculo,
-        km_entrada: parseInt(formEntrada.kmEntrada) || 0,
-        km_inicio_rota: parseInt(formEntrada.kmInicioRota) || 0,
-        km_fim_rota: parseInt(formEntrada.kmFimRota) || 0,
-        motorista: formEntrada.motorista,
-        cliente: formEntrada.cliente,
-        local_saida: formEntrada.localSaida,
-        motivo: formEntrada.motivo,
-        descricao: formEntrada.descricao,
-      }).select().single();
-      if (error) throw error;
+      const resp = await fetch(`${API_URL}/api/portaria/entradas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataHora:    formEntrada.dataHora ? new Date(formEntrada.dataHora).toISOString() : new Date().toISOString(),
+          monitor:     formEntrada.monitor,
+          veiculo:     formEntrada.veiculo,
+          kmEntrada:   parseInt(formEntrada.kmEntrada)    || 0,
+          kmInicioRota: parseInt(formEntrada.kmInicioRota) || 0,
+          kmFimRota:   parseInt(formEntrada.kmFimRota)    || 0,
+          motorista:   formEntrada.motorista,
+          cliente:     formEntrada.cliente,
+          localSaida:  formEntrada.localSaida,
+          motivo:      formEntrada.motivo,
+          descricao:   formEntrada.descricao,
+        }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const row = await resp.json();
       setEntradas((prev) => [normalizeEntrada(row), ...prev]);
       toast({ title: "Entrada registrada!", description: "A entrada do veículo foi registrada com sucesso." });
       setEntradaDialogOpen(false);
@@ -214,18 +223,22 @@ export default function Portaria() {
       return;
     }
     try {
-      const { data: row, error } = await supabase.from('portaria_movimentacoes').insert({
-        tipo: 'saida',
-        data_hora: formSaida.dataHora ? new Date(formSaida.dataHora).toISOString() : new Date().toISOString(),
-        monitor: formSaida.monitor,
-        veiculo: formSaida.veiculo,
-        km_saida: parseInt(formSaida.kmSaida) || 0,
-        motorista: formSaida.motorista,
-        destino: formSaida.destino,
-        vistoria_conforme: formSaida.vistoriaConforme === "sim",
-        observacoes: formSaida.observacoes,
-      }).select().single();
-      if (error) throw error;
+      const resp = await fetch(`${API_URL}/api/portaria/saidas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataHora:       formSaida.dataHora ? new Date(formSaida.dataHora).toISOString() : new Date().toISOString(),
+          monitor:        formSaida.monitor,
+          veiculo:        formSaida.veiculo,
+          kmSaida:        parseInt(formSaida.kmSaida) || 0,
+          motorista:      formSaida.motorista,
+          destino:        formSaida.destino,
+          vistoriaConforme: formSaida.vistoriaConforme === 'sim',
+          observacoes:    formSaida.observacoes,
+        }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const row = await resp.json();
       setSaidas((prev) => [normalizeSaida(row), ...prev]);
       toast({ title: "Saída registrada!", description: "A saída do veículo foi registrada com sucesso." });
       setSaidaDialogOpen(false);
@@ -309,6 +322,7 @@ export default function Portaria() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Enviar Relatório por E-mail</DialogTitle>
+            <DialogDescription>Escolha destinatários e filtros para o relatório enviado por e-mail.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {/* Destinatários */}
@@ -356,18 +370,34 @@ export default function Portaria() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEmailModalOpen(false)}>Cancelar</Button>
-            <Button disabled={emailEnviando || emailDestinatarios.length === 0} onClick={async () => {
+            <Button disabled={emailEnviando} onClick={async () => {
               setEmailEnviando(true);
-              // Simulação de envio
-              setTimeout(() => {
-                setEmailEnviando(false);
+              try {
+                const resp = await fetch(`${API_URL}/api/email/relatorio-portaria`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    destinatarios: emailDestinatarios.length ? emailDestinatarios : undefined,
+                    assunto: emailAssunto,
+                    filtros: {
+                      data_inicio: filtrosEntradas.dataDe ? (filtrosEntradas.dataDe as Date).toISOString().slice(0,10) : undefined,
+                      data_fim:    filtrosEntradas.dataAte ? (filtrosEntradas.dataAte as Date).toISOString().slice(0,10) : undefined,
+                    },
+                  }),
+                });
+                const result = await resp.json();
+                if (!resp.ok) throw new Error(result.erro || 'Erro ao enviar');
+                toast({ title: "E-mail enviado!", description: `Relatório enviado para ${result.destinatarios?.join(', ')}.` });
                 setEmailModalOpen(false);
-                toast({ title: "E-mail enviado!", description: "Relatório enviado com sucesso.", variant: "default" });
                 setEmailDestinatarios([]);
-                setEmailAssunto(`Relatório de Portaria — ${new Date().toLocaleDateString("pt-BR")}`);
-                setEmailMensagem("");
-              }, 1200);
-            }}>Enviar</Button>
+                setEmailAssunto(`Relatório de Portaria — ${new Date().toLocaleDateString('pt-BR')}`);
+                setEmailMensagem('');
+              } catch (err: any) {
+                toast({ title: "Erro ao enviar", description: err.message, variant: "destructive" });
+              } finally {
+                setEmailEnviando(false);
+              }
+            }}>{emailEnviando ? 'Enviando...' : 'Enviar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
