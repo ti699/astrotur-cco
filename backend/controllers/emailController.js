@@ -3,12 +3,19 @@
 const { enviarRelatorio } = require('../services/emailService');
 const { supabase }        = require('../config/supabase');
 
+// Destinatários fixos — sempre recebem o relatório independente do body
+const DESTINATARIOS_FIXOS = [
+  'ti@astroturviagens.com',
+  'sofia@astroturviagens.com',
+  'alessandra@astroturviagens.com',
+];
+
 /**
  * POST /api/email/relatorio-portaria
  *
  * Body:
  * {
- *   destinatarios: string[],
+ *   destinatarios?: string[],    // opcional — mesclado com os fixos acima
  *   assunto?: string,
  *   nome_destinatario?: string,
  *   filtros?: {
@@ -23,15 +30,12 @@ const { supabase }        = require('../config/supabase');
 async function enviarRelatorioPortaria(req, res) {
   const { destinatarios, assunto, filtros, nome_destinatario } = req.body;
 
-  // 1. validar destinatários antes de consultar o banco
-  if (!destinatarios?.length) {
-    return res.status(400).json({ erro: 'Campo destinatarios é obrigatório (array de e-mails)' });
-  }
+  // 1. mesclar destinatários do body com os fixos (sem duplicatas)
+  const extras      = Array.isArray(destinatarios) ? destinatarios : [];
+  const todosList   = [...new Set([...DESTINATARIOS_FIXOS, ...extras])];
+  const emailsValidos = todosList.filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 
-  const emailsValidos = (destinatarios).filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-  if (!emailsValidos.length) {
-    return res.status(400).json({ erro: 'Nenhum e-mail válido fornecido' });
-  }
+  // emailsValidos nunca ficará vazio porque os fixos são sempre válidos
 
   // 2. buscar dados com os filtros recebidos
   let query = supabase
