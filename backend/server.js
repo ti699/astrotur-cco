@@ -75,6 +75,9 @@ app.use('/api/v1/socorro', require('./routes/socorro'));
 // Portaria v1 — endpoints versionados com regras de negócio completas
 app.use('/api/v1/portaria', require('./routes/portaria-v1'));
 
+// E-mail — envio de relatórios com PDF anexado
+app.use('/api/email', require('./routes/email'));
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Sistema CCO API is running' });
