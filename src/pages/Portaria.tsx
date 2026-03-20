@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import {
-  Plus, Search, ArrowDownToLine, ArrowUpFromLine, Download, Upload, MoreHorizontal, Eye, Edit, Clock, FileText, Route,
+  Plus, Search, ArrowDownToLine, ArrowUpFromLine, Download, Upload, MoreHorizontal, Eye, Edit, Clock, FileText, Route, Mail, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,9 @@ import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { DashboardLocalizacaoVeiculos } from "@/components/portaria/DashboardLocalizacaoVeiculos";
+import { FiltroEntradasCompacto } from "@/components/portaria/FiltroEntradasCompacto";
+import { FiltroSaidasCompacto } from "@/components/portaria/FiltroSaidasCompacto";
 
 interface EntradaRecord {
   id: number; dataHora: string; monitor: string; veiculo: string;
@@ -83,6 +86,40 @@ const calcKmMorto = (entry: EntradaRecord) => {
 };
 
 export default function Portaria() {
+        // Estado do modal de envio por e-mail
+        const [emailModalOpen, setEmailModalOpen] = useState(false);
+        const [emailDestinatarios, setEmailDestinatarios] = useState<string[]>([]);
+        const [emailBusca, setEmailBusca] = useState("");
+        const [emailAssunto, setEmailAssunto] = useState(`Relatório de Portaria — ${new Date().toLocaleDateString("pt-BR")}`);
+        const [emailMensagem, setEmailMensagem] = useState("");
+        const [emailEnviando, setEmailEnviando] = useState(false);
+      // Estado dos filtros da aba Saídas
+      const [filtrosSaidas, setFiltrosSaidas] = useState({
+        busca: "",
+        dataDe: null,
+        dataAte: null,
+        status: [],
+        clientes: [],
+        buscaCliente: "",
+        monitores: [],
+      });
+      const limparFiltrosSaidas = () => setFiltrosSaidas({ busca: "", dataDe: null, dataAte: null, status: [], clientes: [], buscaCliente: "", monitores: [] });
+    // Estado dos filtros da aba Entradas
+    const [filtrosEntradas, setFiltrosEntradas] = useState({
+      busca: "",
+      dataDe: null,
+      dataAte: null,
+      status: [],
+      clientes: [],
+      buscaCliente: "",
+      monitores: [],
+    });
+    // Opções mockadas (depois pode ser dinâmico)
+    const opcoesStatus = ["Entrada", "Saída", "Em Operação", "Na Garagem"];
+    const opcoesClientes = ["JEEP", "FIAT", "VOLKSWAGEN", "TOYOTA"];
+    const opcoesMonitores = monitores;
+    // Função de limpar filtros
+    const limparFiltrosEntradas = () => setFiltrosEntradas({ busca: "", dataDe: null, dataAte: null, status: [], clientes: [], buscaCliente: "", monitores: [] });
   const [searchTerm, setSearchTerm] = useState("");
   const [entradas, setEntradas] = useState<EntradaRecord[]>([]);
   const [saidas, setSaidas] = useState<SaidaRecord[]>([]);
@@ -215,6 +252,8 @@ export default function Portaria() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Painel de Localização de Veículos */}
+      <DashboardLocalizacaoVeiculos />
       {/* Detalhes Modal with KM Morto */}
       {selectedEntry && (
         <DetalhesDialog
@@ -264,6 +303,74 @@ export default function Portaria() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="mr-2 h-4 w-4" />Importar</Button>
           <Button variant="outline" onClick={handleRelatorio}><FileText className="mr-2 h-4 w-4" />Relatório</Button>
+          <Button variant="outline" onClick={() => setEmailModalOpen(true)}><Mail className="mr-2 h-4 w-4" />Enviar por E-mail</Button>
+      {/* Modal de Envio por E-mail */}
+      <Dialog open={emailModalOpen} onOpenChange={setEmailModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Enviar Relatório por E-mail</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {/* Destinatários */}
+            <div>
+              <label className="font-semibold text-sm mb-1 block">Destinatários</label>
+              <div className="flex gap-2 mb-2">
+                <Input placeholder="Buscar nome ou e-mail..." value={emailBusca} onChange={e => setEmailBusca(e.target.value)} className="w-40" />
+                <Button variant="outline" size="sm" onClick={() => {
+                  if (emailBusca && !emailDestinatarios.includes(emailBusca)) {
+                    setEmailDestinatarios([...emailDestinatarios, emailBusca]);
+                    setEmailBusca("");
+                  }
+                }}>Adicionar</Button>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {emailDestinatarios.map((d, i) => (
+                  <Badge key={d} className="bg-blue-100 text-blue-800 flex items-center gap-1">{d}<X className="h-3 w-3 cursor-pointer" onClick={() => setEmailDestinatarios(emailDestinatarios.filter((x, idx) => idx !== i))} /></Badge>
+                ))}
+              </div>
+            </div>
+            {/* Assunto */}
+            <div>
+              <label className="font-semibold text-sm mb-1 block">Assunto</label>
+              <Input value={emailAssunto} onChange={e => setEmailAssunto(e.target.value)} />
+            </div>
+            {/* Mensagem adicional */}
+            <div>
+              <label className="font-semibold text-sm mb-1 block">Mensagem adicional</label>
+              <Textarea placeholder="Mensagem opcional..." value={emailMensagem} onChange={e => setEmailMensagem(e.target.value)} />
+            </div>
+            {/* Preview */}
+            <div className="bg-muted rounded p-2 text-sm">
+              <div className="font-semibold mb-1">Preview do E-mail:</div>
+              <div>Período: {filtrosEntradas.dataDe ? filtrosEntradas.dataDe.toLocaleDateString("pt-BR") : "-"} até {filtrosEntradas.dataAte ? filtrosEntradas.dataAte.toLocaleDateString("pt-BR") : "-"}</div>
+              <div>Resumo:</div>
+              <ul className="ml-4 list-disc">
+                <li>Total de veículos: {filteredEntradas.length}</li>
+                <li>Entradas hoje: {stats.entradasHoje}</li>
+                <li>Saídas hoje: {stats.saidasHoje}</li>
+                <li>Em operação: {stats.emOperacao}</li>
+                <li>Na garagem: {stats.naGaragem}</li>
+              </ul>
+              {emailMensagem && <div className="mt-2">Mensagem adicional: <span className="italic">{emailMensagem}</span></div>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailModalOpen(false)}>Cancelar</Button>
+            <Button disabled={emailEnviando || emailDestinatarios.length === 0} onClick={async () => {
+              setEmailEnviando(true);
+              // Simulação de envio
+              setTimeout(() => {
+                setEmailEnviando(false);
+                setEmailModalOpen(false);
+                toast({ title: "E-mail enviado!", description: "Relatório enviado com sucesso.", variant: "default" });
+                setEmailDestinatarios([]);
+                setEmailAssunto(`Relatório de Portaria — ${new Date().toLocaleDateString("pt-BR")}`);
+                setEmailMensagem("");
+              }, 1200);
+            }}>Enviar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
           <Dialog open={entradaDialogOpen} onOpenChange={setEntradaDialogOpen}>
             <Button variant="outline" onClick={() => setEntradaDialogOpen(true)}>
@@ -357,16 +464,15 @@ export default function Portaria() {
         </TabsList>
 
         <TabsContent value="entradas" className="space-y-4">
-          <Card><CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Buscar por veículo, motorista..." className="pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-              </div>
-              <Input type="date" className="w-full md:w-[180px]" />
-            </div>
-          </CardContent></Card>
-
+          <FiltroEntradasCompacto
+            filtros={filtrosEntradas}
+            setFiltros={setFiltrosEntradas}
+            opcoesStatus={opcoesStatus}
+            opcoesClientes={opcoesClientes}
+            opcoesMonitores={opcoesMonitores}
+            totalResultados={filteredEntradas.length}
+            onLimpar={limparFiltrosEntradas}
+          />
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader>
@@ -410,16 +516,15 @@ export default function Portaria() {
         </TabsContent>
 
         <TabsContent value="saidas" className="space-y-4">
-          <Card><CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Buscar por veículo, motorista..." className="pl-10" />
-              </div>
-              <Input type="date" className="w-full md:w-[180px]" />
-            </div>
-          </CardContent></Card>
-
+          <FiltroSaidasCompacto
+            filtros={filtrosSaidas}
+            setFiltros={setFiltrosSaidas}
+            opcoesStatus={opcoesStatus}
+            opcoesClientes={opcoesClientes}
+            opcoesMonitores={opcoesMonitores}
+            totalResultados={filteredSaidas.length}
+            onLimpar={limparFiltrosSaidas}
+          />
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader>

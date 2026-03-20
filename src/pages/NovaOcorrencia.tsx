@@ -23,7 +23,8 @@ import {
   TIPOS_OCORRENCIA,
   type OcorrenciaFormData,
 } from "@/schemas/ocorrenciaSchema";
-import { useCreateOcorrencia, useClientes, useVeiculos } from "@/services/useApi";
+import { useCreateOcorrencia, useClientes, useVeiculos, useUsuarios } from "@/services/useApi";
+import { useState } from "react";
 
 const PLANTONISTAS = ["VALDOMIRO", "MACARIO", "IRANILDO", "ANDERSON"];
 
@@ -40,6 +41,19 @@ export default function NovaOcorrencia() {
   const createOcorrencia = useCreateOcorrencia();
   const { data: clientesData = [] } = useClientes();
   const { data: veiculosData = [] } = useVeiculos();
+  const { data: usuariosData = [] } = useUsuarios();
+
+  // Estado para campos da seção Socorro
+  // Mock para teste
+  const [codigoSocorro] = useState(() => `SOC-TESTE-1234`);
+  const [turnoSocorro, setTurnoSocorro] = useState("Manhã");
+  const [motoristaSocorro, setMotoristaSocorro] = useState("João Motorista");
+  const [rotaSocorro, setRotaSocorro] = useState("Rota 12 - Centro");
+  const [naturezaSocorro, setNaturezaSocorro] = useState("Mecânico");
+  const [houveTrocaSocorro, setHouveTrocaSocorro] = useState(true);
+  const [carroReservaSocorro, setCarroReservaSocorro] = useState("ABC-1234");
+  const [tipoAtendimentoSocorro, setTipoAtendimentoSocorro] = useState("Reparo");
+  const [fotosSocorro, setFotosSocorro] = useState([]);
 
   const {
     register,
@@ -206,6 +220,25 @@ export default function NovaOcorrencia() {
                 </Select>
                 <FieldError message={errors.tipo_ocorrencia?.message} />
               </div>
+
+              {/* Aprovador */}
+              <div className="space-y-2">
+                <Label>Aprovador *</Label>
+                <Select
+                  onValueChange={(v) => setValue("aprovador", v, { shouldValidate: true })}
+                  // Busca por texto: Select já filtra por padrão
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o aprovador" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {usuariosData.filter(u => u.perfil === "aprovador").map((u) => (
+                      <SelectItem key={u.id} value={u.nome}>{u.nome} ({u.email})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldError message={errors.aprovador?.message} />
+              </div>
             </CardContent>
           </Card>
 
@@ -251,7 +284,7 @@ export default function NovaOcorrencia() {
             <Card className="border-orange-200 bg-orange-50/30 lg:col-span-2">
               <CardHeader>
                 <CardTitle className="text-lg text-orange-800">
-                  Detalhes do Socorro
+                  Socorro
                   <span className="ml-2 text-xs font-normal text-orange-600">
                     (obrigatório por ser tipo Socorro)
                   </span>
@@ -259,78 +292,146 @@ export default function NovaOcorrencia() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
-                  {/* Tipo de socorro */}
+                  {/* Código */}
                   <div className="space-y-2">
-                    <Label>Tipo de Socorro *</Label>
-                    <Select
-                      onValueChange={(v) =>
-                        setValue("tipo_socorro", v, { shouldValidate: true })
-                      }
-                    >
+                    <Label>Código *</Label>
+                    <Input value={codigoSocorro} disabled />
+                  </div>
+                  {/* Turno */}
+                  <div className="space-y-2">
+                    <Label>Turno *</Label>
+                    <Select onValueChange={setTurnoSocorro} value={turnoSocorro}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione o tipo de socorro" />
+                        <SelectValue placeholder="Selecione o turno" />
                       </SelectTrigger>
                       <SelectContent>
-                        {TIPOS_SOCORRO.map((t) => (
-                          <SelectItem key={t.id} value={t.nome}>
-                            {t.nome}
-                            {t.alertaDiretoria && " ⚠️"}
-                          </SelectItem>
+                        <SelectItem value="Manhã">Manhã</SelectItem>
+                        <SelectItem value="Tarde">Tarde</SelectItem>
+                        <SelectItem value="Noite">Noite</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Motorista */}
+                  <div className="space-y-2">
+                    <Label>Motorista *</Label>
+                    <Select onValueChange={setMotoristaSocorro} value={motoristaSocorro}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o motorista" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {usuariosData.filter(u => u.cargo === "motorista").map((u) => (
+                          <SelectItem key={u.id} value={u.nome}>{u.nome} ({u.email})</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <FieldError message={errors.tipo_socorro?.message} />
+                  </div>
+                  {/* Rota */}
+                  <div className="space-y-2">
+                    <Label>Rota *</Label>
+                    <Input value={rotaSocorro} onChange={e => setRotaSocorro(e.target.value)} placeholder="Informe a rota" />
+                  </div>
+                  {/* Natureza */}
+                  <div className="space-y-2">
+                    <Label>Natureza *</Label>
+                    <Select onValueChange={setNaturezaSocorro} value={naturezaSocorro}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a natureza" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Mecânico">Mecânico</SelectItem>
+                        <SelectItem value="Elétrico">Elétrico</SelectItem>
+                        <SelectItem value="Pneu">Pneu</SelectItem>
+                        <SelectItem value="Pane Seca">Pane Seca</SelectItem>
+                        <SelectItem value="Avaria">Avaria</SelectItem>
+                        <SelectItem value="Outros">Outros</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  {/* Horários */}
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Horários de Socorro */}
+                  <div className="space-y-2">
+                    <Label htmlFor="horario_inicio_socorro">Início *</Label>
+                    <Input
+                      id="horario_inicio_socorro"
+                      type="time"
+                      {...register("horario_socorro", { required: isSocorro })}
+                      onBlur={e => {
+                        // Limpa fim se for menor que início
+                        const inicio = e.target.value;
+                        const fim = (document.getElementById("horario_fim_socorro") as HTMLInputElement)?.value;
+                        if (inicio && fim && fim < inicio) {
+                          setValue("horario_saida", "");
+                        }
+                      }}
+                    />
+                    <FieldError message={errors.horario_socorro?.message} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="horario_fim_socorro">Fim *</Label>
+                    <Input
+                      id="horario_fim_socorro"
+                      type="time"
+                      {...register("horario_saida", { required: isSocorro })}
+                      min={watch("horario_socorro") || undefined}
+                    />
+                    <FieldError message={errors.horario_saida?.message} />
+                  </div>
+                  {/* Houve Troca */}
+                  <div className="space-y-2">
+                    <Label>Houve Troca *</Label>
+                    <Select onValueChange={v => setHouveTrocaSocorro(v === "Sim")} value={houveTrocaSocorro ? "Sim" : "Não"}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Sim">Sim</SelectItem>
+                        <SelectItem value="Não">Não</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Carro Reserva — condicional */}
+                  {houveTrocaSocorro && (
                     <div className="space-y-2">
-                      <Label htmlFor="horario_socorro">Horário do Socorro *</Label>
-                      <Input id="horario_socorro" type="time" {...register("horario_socorro")} />
-                      <FieldError message={errors.horario_socorro?.message} />
+                      <Label>Carro Reserva *</Label>
+                      <Select onValueChange={setCarroReservaSocorro} value={carroReservaSocorro}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o carro reserva" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {veiculosData.filter(v => v.status === "reserva").map((v) => (
+                            <SelectItem key={v.id} value={v.placa}>{v.placa} ({v.modelo})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="horario_saida">Horário Saída</Label>
-                      <Input id="horario_saida" type="time" {...register("horario_saida")} />
-                    </div>
+                  )}
+                  {/* Tipo de Atendimento */}
+                  <div className="space-y-2">
+                    <Label>Tipo de Atendimento *</Label>
+                    <Select onValueChange={setTipoAtendimentoSocorro} value={tipoAtendimentoSocorro}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o tipo de atendimento" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Reparo">Reparo</SelectItem>
+                        <SelectItem value="Troca">Troca</SelectItem>
+                        <SelectItem value="Remoção">Remoção</SelectItem>
+                        <SelectItem value="Outros">Outros</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Upload de Foto */}
+                  <div className="space-y-2">
+                    <Label>Upload de Foto *</Label>
+                    <Input type="file" multiple accept="image/*" onChange={e => setFotosSocorro(Array.from(e.target.files || []))} />
+                    {fotosSocorro.length === 0 && <p className="text-xs text-destructive mt-1">Obrigatório</p>}
                   </div>
                 </div>
-
-                {/* Descrição para "Outros" */}
-                {requerDescricaoSocorro && (
-                  <div className="space-y-2">
-                    <Label htmlFor="descricao_socorro">Descrição do Socorro *</Label>
-                    <Textarea
-                      id="descricao_socorro"
-                      placeholder='Descreva o tipo de socorro (obrigatório para "Outros")…'
-                      className="min-h-[80px]"
-                      {...register("descricao_socorro")}
-                    />
-                    <FieldError message={errors.descricao_socorro?.message} />
-                  </div>
-                )}
-
-                {/* Alerta Pane Seca */}
-                {alertaDiretoria && (
-                  <Alert variant="destructive" className="bg-red-50 border-red-300">
+                {/* Validação visual */}
+                {(!turnoSocorro || !motoristaSocorro || !rotaSocorro || !naturezaSocorro || !tipoAtendimentoSocorro || fotosSocorro.length === 0 || (houveTrocaSocorro && !carroReservaSocorro)) && (
+                  <Alert variant="destructive" className="mt-4">
                     <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Alerta Crítico — Pane Seca</AlertTitle>
-                    <AlertDescription>
-                      Esta é uma falha operacional evitável. A diretoria será
-                      notificada automaticamente ao salvar.
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {/* Alerta Avaria */}
-                {isAvaria && (
-                  <Alert className="bg-amber-50 border-amber-300">
-                    <Info className="h-4 w-4 text-amber-600" />
-                    <AlertTitle className="text-amber-800">Sugestão: Abrir workflow de DAI</AlertTitle>
-                    <AlertDescription className="text-amber-700">
-                      Após salvar, considere abrir um novo workflow de DAI em Avarias
-                      para iniciar o processo de precificação.
-                    </AlertDescription>
+                    <AlertTitle>Preencha todos os campos obrigatórios da seção Socorro</AlertTitle>
                   </Alert>
                 )}
               </CardContent>
@@ -345,23 +446,31 @@ export default function NovaOcorrencia() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Houve Atraso?</Label>
+                  <Label>Atraso?</Label>
                   <p className="text-sm text-muted-foreground">
-                    Marque se a ocorrência causou atraso na operação
+                    Marque se houve atraso no socorro
                   </p>
                 </div>
                 <Switch
                   checked={houveAtraso}
-                  onCheckedChange={(v) =>
-                    setValue("houve_atraso", v, { shouldValidate: true })
-                  }
+                  onCheckedChange={(v) => {
+                    setValue("houve_atraso", v, { shouldValidate: true });
+                    if (!v) setValue("tempo_atraso", "");
+                  }}
                 />
               </div>
 
               {houveAtraso && (
                 <div className="space-y-2">
-                  <Label htmlFor="tempo_atraso">Tempo de Atraso (HH:MM) *</Label>
-                  <Input id="tempo_atraso" type="time" {...register("tempo_atraso")} />
+                  <Label htmlFor="tempo_atraso">Quantos minutos? *</Label>
+                  <Input
+                    id="tempo_atraso"
+                    type="number"
+                    min={1}
+                    step={1}
+                    placeholder="Ex: 15"
+                    {...register("tempo_atraso", { required: houveAtraso })}
+                  />
                   <FieldError message={errors.tempo_atraso?.message} />
                 </div>
               )}

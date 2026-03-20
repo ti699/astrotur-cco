@@ -36,12 +36,12 @@ export const ocorrenciaSchema = z
     // ── Socorro — condicionalmente obrigatórios ────────────────────────────────
     tipo_socorro: z.string().optional().default(''),
     descricao_socorro: z.string().optional().default(''),
-    horario_socorro: z.string().optional().default(''),
-    horario_saida: z.string().optional().default(''),
+    horario_socorro: z.string().optional().default(''), // Início
+    horario_saida: z.string().optional().default(''),   // Fim
 
     // ── Atraso — condicionalmente obrigatório ──────────────────────────────────
     houve_atraso: z.boolean().default(false),
-    tempo_atraso: z.string().optional().default(''),
+    tempo_atraso: z.union([z.string(), z.number()]).optional().default(''),
 
     // ── Conclusão ──────────────────────────────────────────────────────────────
     status: z.enum(STATUS_OCORRENCIA).default('PENDENTE'),
@@ -61,8 +61,23 @@ export const ocorrenciaSchema = z
       if (!data.horario_socorro) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Horário do socorro obrigatório quando Tipo = Socorro',
+          message: 'Horário de início obrigatório quando Tipo = Socorro',
           path: ['horario_socorro'],
+        });
+      }
+      if (!data.horario_saida) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Horário de fim obrigatório quando Tipo = Socorro',
+          path: ['horario_saida'],
+        });
+      }
+      // Fim não pode ser menor que início
+      if (data.horario_socorro && data.horario_saida && data.horario_saida < data.horario_socorro) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'O horário de fim não pode ser menor que o de início',
+          path: ['horario_saida'],
         });
       }
 
@@ -77,12 +92,20 @@ export const ocorrenciaSchema = z
     }
 
     // Regra condicional para houve_atraso
-    if (data.houve_atraso && !data.tempo_atraso) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Informe o tempo de atraso (HH:MM)',
-        path: ['tempo_atraso'],
-      });
+    if (data.houve_atraso) {
+      if (!data.tempo_atraso && data.tempo_atraso !== 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Informe o tempo de atraso em minutos',
+          path: ['tempo_atraso'],
+        });
+      } else if (Number(data.tempo_atraso) <= 0 || isNaN(Number(data.tempo_atraso))) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'O tempo de atraso deve ser maior que zero',
+          path: ['tempo_atraso'],
+        });
+      }
     }
   });
 

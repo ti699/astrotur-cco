@@ -1,3 +1,4 @@
+// ...imports...
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -5,6 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -19,6 +21,7 @@ import { ImportarCSVDialog } from "@/components/shared/ImportarCSVDialog";
 import { gerarRelatorioPDF } from "@/utils/gerarRelatorioPDF";
 import { useToast } from "@/hooks/use-toast";
 import { useOcorrencias, useUpdateOcorrencia, useDeleteOcorrencia, type Ocorrencia } from "@/services/useApi";
+import { Command, CommandInput, CommandList, CommandItem, CommandEmpty } from "@/components/ui/command";
 
 // Dados mock removidos — todos os dados vêm do backend via API
 
@@ -38,14 +41,41 @@ const getTypeBadge = (type: string) => {
 };
 
 export default function Ocorrencias() {
+    // Função para imprimir OS
+    const handleImprimirOS = (occ: Ocorrencia) => {
+      // Abre o template de impressão em uma nova janela
+      const printWindow = window.open('', '_blank', 'width=900,height=1200');
+      if (!printWindow) return;
+      printWindow.document.write(`<!DOCTYPE html><html><head><title>Ordem de Serviço — Socorro</title><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body style="margin:0;padding:0;">`);
+      printWindow.document.write('<div id="os-root"></div>');
+      printWindow.document.write(`<script>
+        window.ocorrencia = ${JSON.stringify(occ)};
+      <\/script>`);
+      printWindow.document.write(`<script src="/os-print-bundle.js"></script>`);
+      printWindow.document.write('</body></html>');
+      printWindow.document.close();
+    };
   const { toast } = useToast();
   const { data: ocorrencias = [], isLoading } = useOcorrencias();
+  // Opções únicas de clientes extraídas das ocorrências
+  const opcoesClientes = useMemo(() => {
+    const nomes = ocorrencias.map(o => o.cliente_nome || o.cliente || "").filter(Boolean);
+    return Array.from(new Set(nomes)).sort();
+  }, [ocorrencias]);
+  // Opções únicas de plantonistas extraídas das ocorrências
+  const plantonistaOptions = useMemo(() => {
+    const nomes = ocorrencias.map(o => o.monitor_nome || o.plantonista || "").filter(Boolean);
+    return Array.from(new Set(nomes)).sort();
+  }, [ocorrencias]);
   const updateOcorrencia = useUpdateOcorrencia();
   const deleteOcorrencia = useDeleteOcorrencia();
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
+  // Filtros multi-seleção
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [clienteFilter, setClienteFilter] = useState<string[]>([]);
+  const [plantonistaFilter, setPlantonistaFilter] = useState<string[]>([]);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
@@ -57,26 +87,41 @@ export default function Ocorrencias() {
   const [selected, setSelected] = useState<Ocorrencia | null>(null);
   const [editForm, setEditForm] = useState({ status: "", descricao: "" });
 
+  // Lógica de filtragem multi-seleção (OR dentro, AND entre filtros)
   const filtered = useMemo(() => {
     return ocorrencias.filter((occ) => {
       const veiculo = occ.veiculo_placa || "";
       const cliente = occ.cliente_nome || "";
-      const monitor = occ.monitor_nome || "";
+      const monitor = occ.monitor_nome || occ.plantonista || "";
       const tipo = occ.tipo_ocorrencia || occ.tipo_quebra_nome || "";
       const statusVal = (occ.status || "").toUpperCase();
       const dateStr = (occ.data_ocorrencia || occ.data_quebra || "").split("T")[0];
 
+      // Busca textual (mantém)
       const matchesSearch = !searchTerm ||
         veiculo.includes(searchTerm) ||
         cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
         monitor.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === "all" || statusVal === statusFilter.toUpperCase();
-      const matchesType = typeFilter === "all" || tipo.toUpperCase().includes(typeFilter.toUpperCase());
+
+      // OR dentro do filtro, AND entre filtros
+      const matchesStatus = statusFilter.length === 0 || statusFilter.includes(statusVal);
+      const matchesType = typeFilter.length === 0 || typeFilter.some((t) => tipo.toUpperCase() === t.toUpperCase());
+      const matchesCliente = clienteFilter.length === 0 || clienteFilter.some((c) => cliente === c);
+      const matchesPlantonista = plantonistaFilter.length === 0 || plantonistaFilter.some((p) => monitor === p);
       const matchesDateStart = !dataInicio || dateStr >= dataInicio;
       const matchesDateEnd = !dataFim || dateStr <= dataFim;
-      return matchesSearch && matchesStatus && matchesType && matchesDateStart && matchesDateEnd;
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesType &&
+        matchesCliente &&
+        matchesPlantonista &&
+        matchesDateStart &&
+        matchesDateEnd
+      );
     });
-  }, [ocorrencias, searchTerm, statusFilter, typeFilter, dataInicio, dataFim]);
+  }, [ocorrencias, searchTerm, statusFilter, typeFilter, clienteFilter, plantonistaFilter, dataInicio, dataFim]);
 
   const stats = useMemo(() => ({
     total: filtered.length,
@@ -225,30 +270,90 @@ export default function Ocorrencias() {
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Buscar por veículo, cliente ou plantonista..." className="pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <div style={{ position: 'relative', width: '100%' }}>
+                <Search style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)' }} className="h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Buscar por veículo, cliente ou plantonista..." style={{ paddingLeft: 32 }} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              </div>
             </div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full md:w-[180px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os tipos</SelectItem>
-                <SelectItem value="QUEBRA">Quebra</SelectItem>
-                <SelectItem value="SOCORRO">Socorro</SelectItem>
-                <SelectItem value="ATRASO">Atraso</SelectItem>
-                <SelectItem value="INFORMAÇÃO">Informação</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full md:w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os status</SelectItem>
-                <SelectItem value="CONCLUIDO">Concluído</SelectItem>
-                <SelectItem value="EM_ANDAMENTO">Em Andamento</SelectItem>
-                <SelectItem value="PENDENTE">Pendente</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input type="date" className="w-full md:w-[150px]" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
-            <Input type="date" className="w-full md:w-[150px]" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+            {/* Dropdown multi-select de Tipo */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full md:w-[180px] justify-between">
+                  Tipo
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56">
+                {['QUEBRA', 'SOCORRO', 'ATRASO', 'INFORMAÇÃO'].map((tipo) => (
+                  <div key={tipo} className="flex items-center gap-2 mb-1">
+                    <input type="checkbox" checked={typeFilter.includes(tipo)} onChange={() => {
+                      setTypeFilter((prev) => prev.includes(tipo) ? prev.filter(t => t !== tipo) : [...prev, tipo]);
+                    }} style={{ accentColor: typeFilter.includes(tipo) ? 'red' : undefined }} />
+                    <span style={{ color: typeFilter.includes(tipo) ? 'red' : undefined }}>{tipo}</span>
+                  </div>
+                ))}
+                <Button variant="ghost" size="xs" onClick={() => setTypeFilter([])}>Limpar</Button>
+              </PopoverContent>
+            </Popover>
+            {/* Dropdown multi-select de Status */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full md:w-[180px] justify-between">
+                  Status
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56">
+                {['PENDENTE', 'EM_ANDAMENTO', 'CONCLUIDO'].map((status) => (
+                  <div key={status} className="flex items-center gap-2 mb-1">
+                    <input type="checkbox" checked={statusFilter.includes(status)} onChange={() => {
+                      setStatusFilter((prev) => prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]);
+                    }} style={{ accentColor: statusFilter.includes(status) ? 'red' : undefined }} />
+                    <span style={{ color: statusFilter.includes(status) ? 'red' : undefined }}>{status}</span>
+                  </div>
+                ))}
+                <Button variant="ghost" size="xs" onClick={() => setStatusFilter([])}>Limpar</Button>
+              </PopoverContent>
+            </Popover>
+            {/* Botão Limpar Filtros */}
+            <Button variant="ghost" className="whitespace-nowrap" onClick={() => {
+              setStatusFilter([]);
+              setTypeFilter([]);
+              setClienteFilter([]);
+              setPlantonistaFilter([]);
+              setDataInicio("");
+              setDataFim("");
+            }}>Limpar Filtros</Button>
+            {/* Filtro Data Range com atalhos rápidos */}
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <Input type="date" className="w-full md:w-[150px]" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+                <Input type="date" className="w-full md:w-[150px]" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              </div>
+              <div className="flex gap-2 mt-1">
+                <Button type="button" size="sm" variant="outline" onClick={() => {
+                  const hoje = new Date().toISOString().slice(0, 10);
+                  setDataInicio(hoje);
+                  setDataFim(hoje);
+                }}>Hoje</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => {
+                  const hoje = new Date();
+                  const inicio = new Date(hoje);
+                  inicio.setDate(hoje.getDate() - 6);
+                  setDataInicio(inicio.toISOString().slice(0, 10));
+                  setDataFim(hoje.toISOString().slice(0, 10));
+                }}>Últimos 7 dias</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => {
+                  const hoje = new Date();
+                  const inicio = new Date(hoje);
+                  inicio.setDate(hoje.getDate() - 29);
+                  setDataInicio(inicio.toISOString().slice(0, 10));
+                  setDataFim(hoje.toISOString().slice(0, 10));
+                }}>Últimos 30 dias</Button>
+              </div>
+              <div className="flex gap-2 mt-1">
+                {dataInicio && <Badge className="bg-primary text-primary-foreground cursor-pointer" onClick={() => setDataInicio("")}>De: {dataInicio} ✕</Badge>}
+                {dataFim && <Badge className="bg-primary text-primary-foreground cursor-pointer" onClick={() => setDataFim("")}>Até: {dataFim} ✕</Badge>}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -291,9 +396,12 @@ export default function Ocorrencias() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleView(occurrence)}><Eye className="mr-2 h-4 w-4" />Visualizar</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleEdit(occurrence)}><Edit className="mr-2 h-4 w-4" />Editar</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(occurrence)}><Trash2 className="mr-2 h-4 w-4" />Excluir</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(occurrence)}><Edit className="mr-2 h-4 w-4" />Alterar Andamento</DropdownMenuItem>
+                        {tipo === "Socorro" || tipo === "SOCORRO" ? (
+                          <DropdownMenuItem onClick={() => handleImprimirOS(occurrence)}><FileText className="mr-2 h-4 w-4" />Imprimir OS</DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem disabled style={{ opacity: 0.5 }}><FileText className="mr-2 h-4 w-4" />Imprimir OS</DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
