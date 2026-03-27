@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const { authenticateToken, requireRole } = require('../middlewares/auth');
 
 // Mock de dados em memória
 const clientesMock = [
@@ -30,30 +31,22 @@ const clientesMock = [
   { id: 24, nome: 'VILA GALÉ', cnpj: '45.678.901/0001-24', contato: '(81) 3335-7777', email: 'contato@vilagale.com', ativo: true }
 ];
 
-// Listar todos os clientes
-router.get('/', async (req, res) => {
+// Listar todos os clientes da empresa (tenant isolado)
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    let clientes;
-    
-    try {
-      const result = await db.query(
-        'SELECT * FROM clientes WHERE ativo = true ORDER BY nome'
-      );
-      clientes = result.rows;
-    } catch (dbError) {
-      console.log('📝 Usando clientes mockados (banco indisponível)');
-      clientes = clientesMock;
-    }
-    
-    res.json(clientes);
+    const result = await db.query(
+      'SELECT * FROM clientes WHERE ativo = true AND empresa_id = $1 ORDER BY nome',
+      [req.user.empresa_id]
+    );
+    res.json(result.rows);
   } catch (error) {
     console.error('Erro ao listar clientes:', error);
     res.status(500).json({ message: 'Erro ao listar clientes' });
   }
 });
 
-// Criar cliente
-router.post('/', async (req, res) => {
+// Criar cliente na empresa do usuário logado
+router.post('/', authenticateToken, requireRole('administrador', 'gerente', 'editor'), async (req, res) => {
   try {
     const { 
       nome, cnpj, contato, email, endereco, telefone, whatsapp, 
@@ -89,25 +82,26 @@ router.post('/', async (req, res) => {
     try {
       const result = await db.query(`
         INSERT INTO clientes (
-          nome, cnpj, contato, email, endereco, 
-          sla_horas, sla_nivel, 
-          prioridade_1, prioridade_2, prioridade_3, 
-          ano_frota
+          nome, cnpj, contato, email, endereco,
+          sla_horas, sla_nivel,
+          prioridade_1, prioridade_2, prioridade_3,
+          ano_frota, empresa_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
       `, [
-        nome, 
-        cnpj || '', 
-        contato || '', 
-        email || '', 
-        endereco || '', 
+        nome,
+        cnpj || '',
+        contato || '',
+        email || '',
+        endereco || '',
         slaValue,
         sla_nivel || 'ALTO',
         prioridade_1 || 'WHATSAPP',
         prioridade_2 || 'LIGAÇÃO',
         prioridade_3 || 'E-MAIL',
-        ano_frota || null
+        ano_frota || null,
+        req.user.empresa_id,   // tenant_id — sempre do token, nunca do body
       ]);
 
       console.log('✅ Cliente criado com sucesso:', result.rows[0].nome);
@@ -145,8 +139,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Atualizar cliente
-router.put('/:id', async (req, res) => {
+// Atualizar cliente — restringe ao tenant do usuário logado
+router.put('/:id', authenticateToken, requireRole('administrador', 'gerente', 'editor'), async (req, res) => {
   try {
     const { id } = req.params;
     const dadosAtualizados = req.body;
@@ -162,7 +156,7 @@ router.put('/:id', async (req, res) => {
             cep = $11, possui_sla = $12, tipo_sla = $13, tempo_sla_minutos = $14, 
             observacoes = $15, sla_nivel = $16, prioridade_1 = $17, prioridade_2 = $18,
             prioridade_3 = $19, ano_frota = $20
-        WHERE id = $21
+        WHERE id = $21 AND empresa_id = $22
         RETURNING *
       `, [
         dadosAtualizados.nome, dadosAtualizados.cnpj, dadosAtualizados.contato, 
@@ -176,11 +170,12 @@ router.put('/:id', async (req, res) => {
         dadosAtualizados.prioridade_2 || null,
         dadosAtualizados.prioridade_3 || null,
         dadosAtualizados.ano_frota || null,
-        id
+        id,
+        req.user.empresa_id,   // garante isolamento de tenant no UPDATE
       ]);
       
       if (result.rows.length === 0) {
-        console.log('⚠️ Cliente não encontrado no banco de dados');
+        console.log('⚠️ Cliente não encontrado ou pertence a outro tenant');
         return res.status(404).json({ message: 'Cliente não encontrado' });
       }
       
@@ -205,38 +200,35 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Buscar cliente por ID
-router.get('/:id', async (req, res) => {
+// Buscar cliente por ID — restringe ao tenant do usuário logado
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    try {
-      const result = await db.query('SELECT * FROM clientes WHERE id = $1', [id]);
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Cliente não encontrado' });
-      }
-      res.json(result.rows[0]);
-    } catch (dbError) {
-      console.log('📝 Buscando cliente mockado (banco indisponível)');
-      const cliente = clientesMock.find(c => c.id == id || c.id === id);
-      if (!cliente) {
-        return res.status(404).json({ message: 'Cliente não encontrado' });
-      }
-      res.json(cliente);
+    const result = await db.query(
+      'SELECT * FROM clientes WHERE id = $1 AND empresa_id = $2',
+      [id, req.user.empresa_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Cliente não encontrado' });
     }
+    res.json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao buscar cliente:', error);
     res.status(500).json({ message: 'Erro ao buscar cliente' });
   }
 });
 
-// Deletar cliente (soft delete)
-router.delete('/:id', async (req, res) => {
+// Deletar cliente (soft delete) — restringe ao tenant do usuário logado
+router.delete('/:id', authenticateToken, requireRole('administrador', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
-
-    await db.query('UPDATE clientes SET ativo = false WHERE id = $1', [id]);
-
+    const result = await db.query(
+      'UPDATE clientes SET ativo = false WHERE id = $1 AND empresa_id = $2 RETURNING id',
+      [id, req.user.empresa_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Cliente não encontrado' });
+    }
     res.json({ message: 'Cliente excluído com sucesso' });
   } catch (error) {
     console.error('Erro ao excluir cliente:', error);

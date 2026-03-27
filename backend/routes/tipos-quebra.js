@@ -1,11 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const { authenticateToken, requireRole } = require('../middlewares/auth');
 
-// GET /api/tipos-quebra - List all tipos de quebra
-router.get('/', async (req, res) => {
+// GET /api/tipos-quebra - List all tipos de quebra (tenant isolado)
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM tipos_quebra ORDER BY nome ASC');
+    const result = await db.query(
+      'SELECT * FROM tipos_quebra WHERE empresa_id = $1 ORDER BY nome ASC',
+      [req.user.empresa_id]
+    );
     res.json(result.rows);
   } catch (error) {
     console.error('Erro ao listar tipos de quebra:', error);
@@ -13,13 +17,16 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/tipos-quebra/:id - Get specific tipo de quebra
-router.get('/:id', async (req, res) => {
+// GET /api/tipos-quebra/:id (tenant isolado)
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('SELECT * FROM tipos_quebra WHERE id = $1', [id]);
+    const result = await db.query(
+      'SELECT * FROM tipos_quebra WHERE id = $1 AND empresa_id = $2',
+      [id, req.user.empresa_id]
+    );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Tipo de quebra não encontrado' });
+      return res.status(404).json({ error: 'Tipo de quebra nao encontrado' });
     }
     res.json(result.rows[0]);
   } catch (error) {
@@ -28,22 +35,19 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/tipos-quebra - Create new tipo de quebra
-router.post('/', async (req, res) => {
+// POST /api/tipos-quebra (tenant isolado)
+router.post('/', authenticateToken, requireRole('administrador', 'gerente', 'editor'), async (req, res) => {
   try {
     const { nome, descricao, ativo } = req.body;
-
     if (!nome) {
-      return res.status(400).json({ error: 'Nome é obrigatório' });
+      return res.status(400).json({ error: 'Nome e obrigatorio' });
     }
-
     const result = await db.query(
-      `INSERT INTO tipos_quebra (nome, descricao, ativo, created_at)
-       VALUES ($1, $2, $3, NOW())
+      `INSERT INTO tipos_quebra (nome, descricao, ativo, empresa_id, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
        RETURNING *`,
-      [nome, descricao || null, ativo !== false]
+      [nome, descricao || null, ativo !== false, req.user.empresa_id]
     );
-
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao criar tipo de quebra:', error);
@@ -51,45 +55,32 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/tipos-quebra/:id - Update tipo de quebra
-router.patch('/:id', async (req, res) => {
+// PATCH /api/tipos-quebra/:id (tenant isolado)
+router.patch('/:id', authenticateToken, requireRole('administrador', 'gerente', 'editor'), async (req, res) => {
   try {
     const { id } = req.params;
     const { nome, descricao, ativo } = req.body;
 
-    // Verify tipo de quebra exists
-    const checkResult = await db.query('SELECT * FROM tipos_quebra WHERE id = $1', [id]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Tipo de quebra não encontrado' });
-    }
-
-    // Build dynamic update query
     const updates = [];
     const values = [];
-    let paramCount = 1;
+    let p = 1;
 
-    if (nome !== undefined) {
-      updates.push(`nome = $${paramCount++}`);
-      values.push(nome);
-    }
-    if (descricao !== undefined) {
-      updates.push(`descricao = $${paramCount++}`);
-      values.push(descricao || null);
-    }
-    if (ativo !== undefined) {
-      updates.push(`ativo = $${paramCount++}`);
-      values.push(ativo);
-    }
+    if (nome !== undefined)     { updates.push(`nome = $${p++}`);     values.push(nome); }
+    if (descricao !== undefined) { updates.push(`descricao = $${p++}`); values.push(descricao || null); }
+    if (ativo !== undefined)     { updates.push(`ativo = $${p++}`);     values.push(ativo); }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
 
-    // Add ID as last parameter
-    values.push(id);
-    const query = `UPDATE tipos_quebra SET ${updates.join(', ')} WHERE id = $${paramCount} RETURNING *`;
-
-    const result = await db.query(query, values);
+    values.push(id, req.user.empresa_id);
+    const result = await db.query(
+      `UPDATE tipos_quebra SET ${updates.join(', ')} WHERE id = $${p++} AND empresa_id = $${p} RETURNING *`,
+      values
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Tipo de quebra nao encontrado' });
+    }
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao atualizar tipo de quebra:', error);
@@ -97,18 +88,17 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/tipos-quebra/:id - Delete tipo de quebra
-router.delete('/:id', async (req, res) => {
+// DELETE /api/tipos-quebra/:id (tenant isolado)
+router.delete('/:id', authenticateToken, requireRole('administrador', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Verify tipo de quebra exists
-    const checkResult = await db.query('SELECT * FROM tipos_quebra WHERE id = $1', [id]);
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Tipo de quebra não encontrado' });
+    const result = await db.query(
+      'DELETE FROM tipos_quebra WHERE id = $1 AND empresa_id = $2 RETURNING id',
+      [id, req.user.empresa_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Tipo de quebra nao encontrado' });
     }
-
-    await db.query('DELETE FROM tipos_quebra WHERE id = $1', [id]);
     res.json({ message: 'Tipo de quebra deletado com sucesso' });
   } catch (error) {
     console.error('Erro ao deletar tipo de quebra:', error);

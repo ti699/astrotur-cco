@@ -1,11 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const { authenticateToken, requireRole } = require('../middlewares/auth');
 
-// GET /api/motoristas - List all motoristas
-router.get('/', async (req, res) => {
+// GET /api/motoristas - Listar motoristas da empresa (tenant isolado)
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM motoristas ORDER BY nome ASC');
+    const result = await db.query(
+      'SELECT * FROM motoristas WHERE empresa_id = $1 ORDER BY nome ASC',
+      [req.user.empresa_id]
+    );
     res.json(result.rows);
   } catch (error) {
     console.error('Erro ao listar motoristas:', error);
@@ -13,11 +17,14 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/motoristas/:id - Get specific motorista
-router.get('/:id', async (req, res) => {
+// GET /api/motoristas/:id - Buscar motorista da empresa
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('SELECT * FROM motoristas WHERE id = $1', [id]);
+    const result = await db.query(
+      'SELECT * FROM motoristas WHERE id = $1 AND empresa_id = $2',
+      [id, req.user.empresa_id]
+    );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Motorista não encontrado' });
     }
@@ -28,8 +35,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/motoristas - Create new motorista
-router.post('/', async (req, res) => {
+// POST /api/motoristas - Criar motorista na empresa
+router.post('/', authenticateToken, requireRole('administrador', 'gerente', 'editor'), async (req, res) => {
   try {
     const { nome, matricula, cpf, cnh, cnhValidade, telefone, status } = req.body;
 
@@ -38,27 +45,33 @@ router.post('/', async (req, res) => {
     }
 
     const result = await db.query(
-      `INSERT INTO motoristas (nome, matricula, cpf, cnh, cnh_validade, telefone, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `INSERT INTO motoristas (nome, matricula, cpf, cnh, cnh_validade, telefone, status, empresa_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
        RETURNING *`,
-      [nome, matricula, cpf, cnh || null, cnhValidade || null, telefone || null, status || 'ATIVO']
+      [nome, matricula, cpf, cnh || null, cnhValidade || null, telefone || null, status || 'ATIVO', req.user.empresa_id]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao criar motorista:', error);
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'CPF ou matrícula já cadastrado nesta empresa' });
+    }
     res.status(500).json({ error: error.message });
   }
 });
 
-// PATCH /api/motoristas/:id - Update motorista
-router.patch('/:id', async (req, res) => {
+// PATCH /api/motoristas/:id - Atualizar motorista da empresa
+router.patch('/:id', authenticateToken, requireRole('administrador', 'gerente', 'editor'), async (req, res) => {
   try {
     const { id } = req.params;
     const { nome, telefone, status, cnh, cnhValidade } = req.body;
 
-    // Verify motorista exists
-    const checkResult = await db.query('SELECT * FROM motoristas WHERE id = $1', [id]);
+    // Verifica existência E que pertence ao tenant
+    const checkResult = await db.query(
+      'SELECT * FROM motoristas WHERE id = $1 AND empresa_id = $2',
+      [id, req.user.empresa_id]
+    );
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: 'Motorista não encontrado' });
     }
@@ -105,23 +118,23 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/motoristas/:id - Delete motorista (mark as DESLIGADO)
-router.delete('/:id', async (req, res) => {
+// DELETE /api/motoristas/:id - Desligar motorista da empresa
+router.delete('/:id', authenticateToken, requireRole('administrador', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verify motorista exists
-    const checkResult = await db.query('SELECT * FROM motoristas WHERE id = $1', [id]);
+    const checkResult = await db.query(
+      'SELECT * FROM motoristas WHERE id = $1 AND empresa_id = $2',
+      [id, req.user.empresa_id]
+    );
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: 'Motorista não encontrado' });
     }
 
-    // Instead of deleting, mark as DESLIGADO
     const result = await db.query(
-      'UPDATE motoristas SET status = $1 WHERE id = $2 RETURNING *',
-      ['DESLIGADO', id]
+      'UPDATE motoristas SET status = $1 WHERE id = $2 AND empresa_id = $3 RETURNING *',
+      ['DESLIGADO', id, req.user.empresa_id]
     );
-    
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao deletar motorista:', error);

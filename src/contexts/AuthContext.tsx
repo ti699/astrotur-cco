@@ -1,14 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import bcrypt from "bcryptjs";
-import { supabase } from "@/lib/supabase";
-
-// Usuários de emergência (espelho do backend Express)
-// Senha: admin123
-const EMERGENCY_USERS = [
-  { id: "1", nome: "Administrador", email: "admin@sistemacco.com", senha: "admin123", cargo: "Administrador", perfil: "administrador" },
-  { id: "2", nome: "Usuário Teste",  email: "teste@teste.com",      senha: "admin123", cargo: "Monitor",        perfil: "monitor" },
-  { id: "3", nome: "Teste Usuario",  email: "teste@usuario.com",    senha: "admin123", cargo: "Operador",       perfil: "editor" },
-];
+import api from "@/services/api";
 
 export type UserRole = "administrador" | "editor" | "portaria";
 
@@ -18,6 +9,13 @@ interface AuthUser {
   email: string;
   role: UserRole;
   cargo?: string;
+  empresa_id: number;
+  empresa?: {
+    id: number;
+    nome: string;
+    slug: string;
+    plano?: string;
+  };
 }
 
 interface AuthContextType {
@@ -71,67 +69,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const emailNorm = email.toLowerCase().trim();
 
-      // === 1ª tentativa: consulta direta na tabela usuarios ===
-      try {
-        const { data: rows } = await supabase
-          .from('usuarios')
-          .select('id, nome, email, perfil, cargo, senha')
-          .eq('ativo', true)
-          .ilike('email', emailNorm)
-          .limit(1);
-
-        if (rows && rows.length > 0) {
-          const u = rows[0];
-
-          // Verifica senha: bcrypt (hash $2a/$2b) ou plain-text
-          let senhaOk = false;
-          if (u.senha && u.senha.startsWith('$2')) {
-            senhaOk = await bcrypt.compare(password, u.senha);
-          } else {
-            senhaOk = u.senha === password;
-          }
-
-          if (senhaOk) {
-            const authUser: AuthUser = {
-              id: String(u.id),
-              nome: u.nome,
-              email: u.email,
-              role: mapPerfil(u.perfil),
-              cargo: u.cargo,
-            };
-            localStorage.setItem(TOKEN_KEY, 'sb-' + Date.now());
-            setUser(authUser);
-            return;
-          }
-
-          // Usuário encontrado mas senha errada
-          throw new Error('Senha incorreta. Verifique suas credenciais.');
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : '';
-        // Se foi senha errada, não tenta fallback de emergência
-        if (msg.startsWith('Senha incorreta')) throw err;
-        // Caso contrário (tabela não existe, RLS bloqueando, etc) continua para emergência
-      }
-
-      // === 2ª tentativa: usuários de emergência hardcoded ===
-      const emergencyUser = EMERGENCY_USERS.find(
-        (u) => u.email === emailNorm && u.senha === password
+      const { data } = await api.post<{ user: Record<string, unknown>; token: string }>(
+        '/auth/login',
+        { email: emailNorm, password }
       );
-      if (emergencyUser) {
-        const authUser: AuthUser = {
-          id: emergencyUser.id,
-          nome: emergencyUser.nome,
-          email: emergencyUser.email,
-          role: mapPerfil(emergencyUser.perfil),
-          cargo: emergencyUser.cargo,
-        };
-        localStorage.setItem(TOKEN_KEY, 'sb-' + Date.now());
-        setUser(authUser);
-        return;
-      }
 
-      throw new Error('Credenciais inválidas. Tente: admin@sistemacco.com / admin123');
+      const u = data.user;
+      const authUser: AuthUser = {
+        id:         String(u.id),
+        nome:       u.nome as string,
+        email:      u.email as string,
+        role:       mapPerfil(u.perfil as string),
+        cargo:      u.cargo as string | undefined,
+        empresa_id: u.empresa_id as number,
+        empresa:    u.empresa as AuthUser['empresa'],
+      };
+
+      localStorage.setItem(TOKEN_KEY, data.token);
+      setUser(authUser);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err instanceof Error ? err.message : 'Erro ao fazer login');
+      throw new Error(msg);
     } finally {
       setIsLoading(false);
     }

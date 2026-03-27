@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import api from "@/services/api";
 
 export interface RotaDistancia {
   id: string;
@@ -38,16 +38,22 @@ export default function BancoDistancias() {
     id: String(r.id),
     origem: (r.origem as string) || '',
     destino: (r.destino as string) || '',
-    distanciaKm: Number(r.distancia_km) || 0,
+    // backend pode retornar distanciaKm (camelCase da coluna) ou distancia_km
+    distanciaKm: Number(r.distanciaKm ?? r.distancia_km) || 0,
   });
 
-  // Load rotas from Supabase
+  // Load rotas via REST API
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase.from('banco_distancias').select('*').order('origem', { ascending: true });
-      if (!error) setRotas((data || []).map((r) => mapRow(r as Record<string, unknown>)));
-      setLoading(false);
+      try {
+        const { data } = await api.get<Record<string, unknown>[]>('/banco-distancias');
+        setRotas((data || []).map(mapRow));
+      } catch (error) {
+        console.error('Erro ao buscar rotas:', error);
+      } finally {
+        setLoading(false);
+      }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -61,24 +67,22 @@ export default function BancoDistancias() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload = {
+        origem: form.origem,
+        destino: form.destino,
+        distanciaKm: parseFloat(form.distanciaKm),
+      };
+
       if (editingRota) {
-        const { data: row, error } = await supabase
-          .from('banco_distancias')
-          .update({ origem: form.origem, destino: form.destino, distancia_km: parseFloat(form.distanciaKm) })
-          .eq('id', editingRota.id)
-          .select()
-          .single();
-        if (error) throw error;
-        setRotas((prev) => prev.map((r) => r.id === editingRota.id ? mapRow(row as Record<string, unknown>) : r));
+        const { data: row } = await api.patch<Record<string, unknown>>(
+          `/banco-distancias/${editingRota.id}`,
+          payload
+        );
+        setRotas((prev) => prev.map((r) => r.id === editingRota.id ? mapRow(row) : r));
         toast({ title: "Rota atualizada!" });
       } else {
-        const { data: row, error } = await supabase
-          .from('banco_distancias')
-          .insert({ origem: form.origem, destino: form.destino, distancia_km: parseFloat(form.distanciaKm) })
-          .select()
-          .single();
-        if (error) throw error;
-        setRotas((prev) => [mapRow(row as Record<string, unknown>), ...prev]);
+        const { data: row } = await api.post<Record<string, unknown>>('/banco-distancias', payload);
+        setRotas((prev) => [mapRow(row), ...prev]);
         toast({ title: "Rota cadastrada!" });
       }
       setModalOpen(false);
@@ -98,8 +102,7 @@ export default function BancoDistancias() {
 
   const handleDelete = async (id: string) => {
     try {
-      const { error } = await supabase.from('banco_distancias').delete().eq('id', id);
-      if (error) throw error;
+      await api.delete(`/banco-distancias/${id}`);
       setRotas((prev) => prev.filter((r) => r.id !== id));
       toast({ title: "Rota excluída" });
     } catch (error) {

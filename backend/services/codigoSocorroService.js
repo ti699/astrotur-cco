@@ -1,32 +1,37 @@
 /**
  * codigoSocorroService.js
  *
- * GeraÁ„o do CÛdigo de Socorro ASTRO.TRF.XXX-D via Supabase RPC.
- * LÛgica pura (formataÁ„o, dÌgito, fallback arquivo) ? codigoSocorroUtils.js
+ * Gera√ß√£o do C√≥digo de Socorro ASTRO.TRF.XXX-D via fun√ß√£o PostgreSQL nativa.
+ * L√≥gica pura (formata√ß√£o, d√≠gito, fallback arquivo) ‚Üí codigoSocorroUtils.js
  *
- * EstratÈgia de persistÍncia:
- *   1. PRIM¡RIO  ó Supabase RPC proximo_seq_socorro(ano_mes)
- *      INSERT ... ON CONFLICT DO UPDATE ó atÙmico, concurrency-safe.
- *   2. FALLBACK  ó arquivo JSON local (data/socorro_counter.json)
- *      Usado quando banco est· offline. N√O È concurrency-safe.
+ * Migrado de Supabase RPC ‚Üí pg Pool nativo em 2026-03-23
+ *
+ * Estrat√©gia de persist√™ncia:
+ *   1. PRIM√ÅRIO   ‚Äî fun√ß√£o PostgreSQL: SELECT proximo_seq_socorro(ano_mes)
+ *      INSERT ... ON CONFLICT DO UPDATE ‚Äî at√¥mico, concurrency-safe.
+ *   2. FALLBACK   ‚Äî arquivo JSON local (data/socorro_counter.json)
+ *      Usado quando banco est√° offline. N√ÉO √© concurrency-safe.
  */
 'use strict';
 
-const { supabase } = require('../config/supabase');
+const db = require('../config/database');
 const { formatarCodigo, chaveAnoMes, proximoSeqArquivo } = require('./codigoSocorroUtils');
 
-async function proximoSeqSupabase(anoMes) {
-  const { data, error } = await supabase.rpc('proximo_seq_socorro', { p_ano_mes: anoMes });
-  if (error) throw new Error(`Supabase RPC error: ${error.message}`);
-  if (typeof data !== 'number') throw new Error('Resposta inesperada do Supabase');
-  return data;
+async function proximoSeqPostgres(anoMes) {
+  const { rows } = await db.query(
+    'SELECT proximo_seq_socorro($1) AS seq',
+    [anoMes]
+  );
+  const seq = rows[0]?.seq;
+  if (typeof seq !== 'number') throw new Error('Resposta inesperada da fun√ß√£o proximo_seq_socorro');
+  return seq;
 }
 
 /**
- * Gera o prÛximo CÛdigo de Socorro no padr„o ASTRO.TRF.XXX-D.
- * Tenta Supabase primeiro; em caso de falha usa arquivo local.
+ * Gera o pr√≥ximo C√≥digo de Socorro no padr√£o ASTRO.TRF.XXX-D.
+ * Tenta PostgreSQL primeiro; em caso de falha usa arquivo local.
  *
- * @param {Date} [date]  ReferÍncia de data (default: agora). Usado nos testes.
+ * @param {Date} [date]  Refer√™ncia de data (default: agora). Usado nos testes.
  * @returns {Promise<string>}  Ex: "ASTRO.TRF.001-0"
  */
 async function gerarCodigoSocorro(date = new Date()) {
@@ -34,15 +39,15 @@ async function gerarCodigoSocorro(date = new Date()) {
   let seq;
 
   try {
-    seq = await proximoSeqSupabase(anoMes);
-    console.log(`?? CÛdigo gerado via Supabase ó mÍs: ${anoMes}, seq: ${seq}`);
+    seq = await proximoSeqPostgres(anoMes);
+    console.log(`üìù C√≥digo gerado via PostgreSQL ‚Äî m√™s: ${anoMes}, seq: ${seq}`);
   } catch (err) {
-    console.warn(`?? Supabase indisponÌvel, usando fallback em arquivo: ${err.message}`);
+    console.warn(`‚ö†Ô∏è  PostgreSQL indispon√≠vel, usando fallback em arquivo: ${err.message}`);
     seq = proximoSeqArquivo(anoMes);
   }
 
   const codigo = formatarCodigo(seq);
-  console.log(`? CÛdigo de socorro: ${codigo}`);
+  console.log(`‚úÖ C√≥digo de socorro: ${codigo}`);
   return codigo;
 }
 

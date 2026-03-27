@@ -6,8 +6,9 @@
 'use strict';
 
 const router = require('express').Router();
+const { authenticateToken } = require('../middlewares/auth');
 const { criarSocorro } = require('../controllers/socorroController');
 
-router.post('/', criarSocorro);
+router.post('/', authenticateToken, criarSocorro);
 
 module.exports = router;

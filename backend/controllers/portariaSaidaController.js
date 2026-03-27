@@ -35,14 +35,15 @@ const veiculoStatus = require('../services/veiculoStatusService');
  * Busca a movimentação de ENTRADA pelo id, com JOIN em veiculos
  * para trazer numero_frota (= nrOrdem) e veiculo_id.
  */
-async function buscarEntrada(client, entradaId) {
+async function buscarEntrada(client, entradaId, empresaId) {
   const r = await client.query(
     `SELECT pm.*, v.numero_frota, v.placa, v.id AS veiculo_id_int
      FROM portaria_movimentacoes pm
      LEFT JOIN veiculos v ON v.id = pm.veiculo_id
      WHERE pm.id = $1
+       AND pm.empresa_id = $2
        AND pm.tipo_movimento = 'ENTRADA'`,
-    [entradaId]
+    [entradaId, empresaId]
   );
   return r.rows.length > 0 ? r.rows[0] : null;
 }
@@ -106,13 +107,13 @@ async function criarSaida(req, res) {
     // ----------------------------------------------------------------
     // ETAPA 2: Buscar movimentação de ENTRADA em portaria_movimentacoes
     // ----------------------------------------------------------------
-    const entrada = await buscarEntrada(client, entradaId);
+    const entrada = await buscarEntrada(client, entradaId, req.user.empresa_id);
 
     if (!entrada) {
       await client.query('ROLLBACK');
       return res.status(404).json({
         error: true,
-        message: `Movimentação de ENTRADA não encontrada para id: ${entradaId}`,
+        message: `Movimentacao de ENTRADA nao encontrada para id: ${entradaId}`,
       });
     }
 
@@ -165,8 +166,8 @@ async function criarSaida(req, res) {
     const insertResult = await client.query(
       `INSERT INTO portaria_saidas_v1
          (entrada_id, nr_ordem, data_hora_saida, monitor_id, motorista_id,
-          km_saida, km_entrada, km_diferenca, destino, conforme, observacoes, status_veiculo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          km_saida, km_entrada, km_diferenca, destino, conforme, observacoes, status_veiculo, empresa_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         entradaId,
@@ -178,9 +179,10 @@ async function criarSaida(req, res) {
         kmEntradaNum ?? kmSaidaNum,
         kmDiferenca,
         String(destino).trim(),
-        conformeNorm,                  // 'SIM' | 'NAO'
+        conformeNorm,
         observacoes?.trim() || null,
         'EM_OPERACAO',
+        req.user.empresa_id,
       ]
     );
 

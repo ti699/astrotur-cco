@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { authenticateToken } = require('../middlewares/auth');
 const {
   getUsuarios,
   getPlantonistas,
@@ -7,10 +8,10 @@ const {
   getClientes,
 } = require('../controllers/lookupController');
 
-router.get('/usuarios',     getUsuarios);
-router.get('/plantonistas', getPlantonistas);
-router.get('/veiculos',     getVeiculos);
-router.get('/motoristas',   getMotoristas);
-router.get('/clientes',     getClientes);
+router.get('/usuarios',     authenticateToken, getUsuarios);
+router.get('/plantonistas', authenticateToken, getPlantonistas);
+router.get('/veiculos',     authenticateToken, getVeiculos);
+router.get('/motoristas',   authenticateToken, getMotoristas);
+router.get('/clientes',     authenticateToken, getClientes);
 
 module.exports = router;

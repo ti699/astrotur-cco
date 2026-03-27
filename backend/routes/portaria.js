@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const { authenticateToken } = require('../middlewares/auth');
 const veiculoStatus = require('../services/veiculoStatusService');
 const {
   registrarCarroVisitante,
@@ -75,7 +76,7 @@ const mapSaida = (row) => ({
 });
 
 // GET /api/portaria/entradas - List all entradas
-router.get('/entradas', async (req, res) => {
+router.get('/entradas', authenticateToken, async (req, res) => {
   try {
     if (await tableExists('portaria_entradas')) {
       const result = await db.query('SELECT * FROM portaria_entradas ORDER BY id DESC');
@@ -107,7 +108,7 @@ router.get('/entradas', async (req, res) => {
 });
 
 // GET /api/portaria/saidas - List all saidas
-router.get('/saidas', async (req, res) => {
+router.get('/saidas', authenticateToken, async (req, res) => {
   try {
     if (await tableExists('portaria_saidas')) {
       const result = await db.query('SELECT * FROM portaria_saidas ORDER BY id DESC');
@@ -139,7 +140,7 @@ router.get('/saidas', async (req, res) => {
 });
 
 // POST /api/portaria/entradas - Create new entrada
-router.post('/entradas', async (req, res) => {
+router.post('/entradas', authenticateToken, async (req, res) => {
   try {
     const { dataHora, monitor, veiculo, kmEntrada, kmInicioRota, kmFimRota, motorista, cliente, localSaida, motivo, programado, descricao } = req.body;
 
@@ -176,6 +177,7 @@ router.post('/entradas', async (req, res) => {
       mapField(['programado'], programado);
       mapField(['descricao', 'observacoes'], descricao || null);
       mapField(['tipo_movimentacao', 'tipo', 'movimento'], 'ENTRADA');
+      if (columns.has('empresa_id')) payload['empresa_id'] = req.user.empresa_id;
 
       const result = await insertDynamic('portaria_movimentacoes', payload);
       const row = result.rows[0];
@@ -192,7 +194,7 @@ router.post('/entradas', async (req, res) => {
 });
 
 // POST /api/portaria/saidas - Create new saida
-router.post('/saidas', async (req, res) => {
+router.post('/saidas', authenticateToken, async (req, res) => {
   try {
     const { dataHora, monitor, veiculo, kmSaida, motorista, destino, vistoriaConforme, observacoes } = req.body;
 
@@ -225,11 +227,12 @@ router.post('/saidas', async (req, res) => {
       mapField(['vistoria_conforme', 'vistoriaconforme'], vistoriaConforme);
       mapField(['observacoes', 'descricao'], observacoes || null);
       mapField(['tipo_movimentacao', 'tipo', 'movimento'], 'SAIDA');
+      if (columns.has('empresa_id')) payload['empresa_id'] = req.user.empresa_id;
 
       const result = await insertDynamic('portaria_movimentacoes', payload);
       const row = result.rows[0];
       const vid = req.body.veiculo_id || row.veiculo_id;
-      if (vid) veiculoStatus.onSaidaPortaria(Number(vid)).catch(e => console.warn('[portaria] status saída:', e.message));
+      if (vid) veiculoStatus.onSaidaPortaria(Number(vid)).catch(e => console.warn('[portaria] status saida:', e.message));
       return res.status(201).json(mapSaida(row));
     }
 
@@ -241,7 +244,7 @@ router.post('/saidas', async (req, res) => {
 });
 
 // DELETE /api/portaria/entradas/:id - Delete entrada
-router.delete('/entradas/:id', async (req, res) => {
+router.delete('/entradas/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -259,7 +262,7 @@ router.delete('/entradas/:id', async (req, res) => {
 });
 
 // DELETE /api/portaria/saidas/:id - Delete saida
-router.delete('/saidas/:id', async (req, res) => {
+router.delete('/saidas/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -280,20 +283,20 @@ router.delete('/saidas/:id', async (req, res) => {
 // IMPORTANTE: rotas estáticas devem vir ANTES de qualquer rota com :id
 
 // GET /api/portaria/movimentacoes — frota (ENTRADA / SAIDA)
-router.get('/movimentacoes',        listarMovimentacoes);
+router.get('/movimentacoes',        authenticateToken, listarMovimentacoes);
 
 // GET /api/portaria/carros-visitantes — VISITANTE_EXTERNO e VISITANTE_EMPRESA
-router.get('/carros-visitantes',    listarCarrosVisitantes);
+router.get('/carros-visitantes',    authenticateToken, listarCarrosVisitantes);
 
 // GET /api/portaria/visitantes-pedestres — tabela portaria_visitantes
-router.get('/visitantes-pedestres', listarVisitantesPedestres);
+router.get('/visitantes-pedestres', authenticateToken, listarVisitantesPedestres);
 
 // ─── POSTs ────────────────────────────────────────────────────────────────
 
 // POST /api/portaria/carro-visitante — Carro visitante (externo ou empresa)
-router.post('/carro-visitante', registrarCarroVisitante);
+router.post('/carro-visitante', authenticateToken, registrarCarroVisitante);
 
 // POST /api/portaria/visitante — Visitante pedestre
-router.post('/visitante', registrarVisitante);
+router.post('/visitante', authenticateToken, registrarVisitante);
 
 module.exports = router;

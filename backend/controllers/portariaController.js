@@ -1,6 +1,6 @@
 'use strict';
 
-const { supabase } = require('../config/supabase');
+const db = require('../config/database');
 const { toArray, toArrayInt, parsePagination } = require('../utils/queryHelpers');
 
 // ─── re-exportar controllers existentes para o router poder ter source único ──
@@ -21,54 +21,70 @@ async function listarMovimentacoes(req, res) {
   const dataFim        = req.query.data_fim    || null;
   const { pagina, limite, offset } = parsePagination(req.query);
 
-  let query = supabase
-    .from('portaria_movimentacoes')
-    .select(`
-      id, tipo_movimento, tipo_movimentacao,
-      data_hora, data_hora_fim,
-      km_entrada, km_inicial, km_final,
-      motivo, motivo_entrada, motivo_detalhado,
-      destino, local_saida, conforme,
-      autorizacao, programado, observacoes,
-      created_at,
-      veiculos(id, placa, numero_frota, modelo),
-      motoristas(id, nome, matricula),
-      usuarios!monitor_id(id, nome),
-      clientes(id, nome)
-    `, { count: 'exact' })
-    .eq('tipo_movimentacao', 'FROTA')
-    .order('data_hora', { ascending: false })
-    .range(offset, offset + limite - 1);
+  const conditions = [`pm.empresa_id = $1`, `pm.tipo_movimentacao = 'FROTA'`];
+  const params = [req.user.empresa_id];
+  let p = 2;
 
-  if (tiposMovimento.length === 1) query = query.eq('tipo_movimento', tiposMovimento[0]);
-  else if (tiposMovimento.length > 1) query = query.in('tipo_movimento', tiposMovimento);
+  if (tiposMovimento.length === 1) { conditions.push(`pm.tipo_movimento = $${p++}`); params.push(tiposMovimento[0]); }
+  else if (tiposMovimento.length > 1) { conditions.push(`pm.tipo_movimento = ANY($${p++})`); params.push(tiposMovimento); }
 
-  if (monitores.length === 1) query = query.eq('monitor_id', monitores[0]);
-  else if (monitores.length > 1) query = query.in('monitor_id', monitores);
+  if (monitores.length === 1) { conditions.push(`pm.monitor_id = $${p++}`); params.push(monitores[0]); }
+  else if (monitores.length > 1) { conditions.push(`pm.monitor_id = ANY($${p++})`); params.push(monitores); }
 
-  if (clientes.length === 1) query = query.eq('cliente_id', clientes[0]);
-  else if (clientes.length > 1) query = query.in('cliente_id', clientes);
+  if (clientes.length === 1) { conditions.push(`pm.cliente_id = $${p++}`); params.push(clientes[0]); }
+  else if (clientes.length > 1) { conditions.push(`pm.cliente_id = ANY($${p++})`); params.push(clientes); }
 
-  if (veiculos.length === 1) query = query.eq('veiculo_id', veiculos[0]);
-  else if (veiculos.length > 1) query = query.in('veiculo_id', veiculos);
+  if (veiculos.length === 1) { conditions.push(`pm.veiculo_id = $${p++}`); params.push(veiculos[0]); }
+  else if (veiculos.length > 1) { conditions.push(`pm.veiculo_id = ANY($${p++})`); params.push(veiculos); }
 
-  if (motoristas.length === 1) query = query.eq('motorista_id', motoristas[0]);
-  else if (motoristas.length > 1) query = query.in('motorista_id', motoristas);
+  if (motoristas.length === 1) { conditions.push(`pm.motorista_id = $${p++}`); params.push(motoristas[0]); }
+  else if (motoristas.length > 1) { conditions.push(`pm.motorista_id = ANY($${p++})`); params.push(motoristas); }
 
-  if (dataInicio) query = query.gte('data_hora', `${dataInicio}T00:00:00`);
-  if (dataFim)    query = query.lte('data_hora', `${dataFim}T23:59:59`);
+  if (dataInicio) { conditions.push(`pm.data_hora >= $${p++}`); params.push(`${dataInicio}T00:00:00`); }
+  if (dataFim)    { conditions.push(`pm.data_hora <= $${p++}`); params.push(`${dataFim}T23:59:59`); }
 
-  const { data, error, count } = await query;
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  if (error) {
+  const sql = `
+    SELECT
+      pm.id, pm.tipo_movimento, pm.tipo_movimentacao,
+      pm.data_hora, pm.data_hora_fim,
+      pm.km_entrada, pm.km_inicial, pm.km_final,
+      pm.motivo, pm.motivo_entrada, pm.motivo_detalhado,
+      pm.destino, pm.local_saida, pm.conforme,
+      pm.autorizacao, pm.programado, pm.observacoes,
+      pm.created_at,
+      json_build_object('id', v.id, 'placa', v.placa, 'numero_frota', v.numero_frota, 'modelo', v.modelo) AS veiculos,
+      json_build_object('id', m.id, 'nome', m.nome, 'matricula', m.matricula) AS motoristas,
+      json_build_object('id', u.id, 'nome', u.nome) AS usuarios,
+      json_build_object('id', c.id, 'nome', c.nome) AS clientes,
+      COUNT(*) OVER() AS total_count
+    FROM portaria_movimentacoes pm
+    LEFT JOIN veiculos   v ON v.id = pm.veiculo_id
+    LEFT JOIN motoristas m ON m.id = pm.motorista_id
+    LEFT JOIN usuarios   u ON u.id = pm.monitor_id
+    LEFT JOIN clientes   c ON c.id = pm.cliente_id
+    ${where}
+    ORDER BY pm.data_hora DESC
+    LIMIT $${p++} OFFSET $${p++}
+  `;
+  params.push(limite, offset);
+
+  try {
+    const { rows } = await db.query(sql, params);
+    const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+
+    // Remove total_count dos registros retornados
+    const dados = rows.map(({ total_count, ...rest }) => rest);
+
+    return res.status(200).json({
+      dados,
+      paginacao: { total, pagina, limite, paginas: Math.ceil(total / limite) }
+    });
+  } catch (error) {
     console.error('❌ [listarMovimentacoes]', error.message);
     return res.status(500).json({ erro: error.message });
   }
-
-  return res.status(200).json({
-    dados: data ?? [],
-    paginacao: { total: count ?? 0, pagina, limite, paginas: Math.ceil((count ?? 0) / limite) }
-  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,51 +95,62 @@ async function listarCarrosVisitantes(req, res) {
   const tipos      = toArray(req.query.tipo_movimentacao);
   const monitores  = toArrayInt(req.query.monitor_id);
   const clientes   = toArrayInt(req.query.cliente_id);
-  const placa      = req.query.placa      || null;
+  const placa      = req.query.placa       || null;
   const dataInicio = req.query.data_inicio || null;
   const dataFim    = req.query.data_fim    || null;
   const { pagina, limite, offset } = parsePagination(req.query);
 
-  let query = supabase
-    .from('portaria_movimentacoes')
-    .select(`
-      id, tipo_movimentacao,
-      condutor_nome, placa_visitante, tipo_veiculo,
-      data_hora, data_hora_fim,
-      km_inicial, km_final,
-      observacoes, created_at,
-      usuarios!monitor_id(id, nome),
-      clientes(id, nome)
-    `, { count: 'exact' })
-    .in('tipo_movimentacao', ['VISITANTE_EXTERNO', 'VISITANTE_EMPRESA'])
-    .order('data_hora', { ascending: false })
-    .range(offset, offset + limite - 1);
+  const conditions = [`pm.empresa_id = $1`, `pm.tipo_movimentacao = ANY(ARRAY['VISITANTE_EXTERNO','VISITANTE_EMPRESA'])`];
+  const params = [req.user.empresa_id];
+  let p = 2;
 
-  // filtro de tipo — se não vier, retorna ambos (o .in base já garante isso)
-  if (tipos.length === 1) query = query.eq('tipo_movimentacao', tipos[0]);
-  else if (tipos.length > 1) query = query.in('tipo_movimentacao', tipos);
+  if (tipos.length === 1) { conditions.push(`pm.tipo_movimentacao = $${p++}`); params.push(tipos[0]); }
+  else if (tipos.length > 1) { conditions.push(`pm.tipo_movimentacao = ANY($${p++})`); params.push(tipos); }
 
-  if (monitores.length === 1) query = query.eq('monitor_id', monitores[0]);
-  else if (monitores.length > 1) query = query.in('monitor_id', monitores);
+  if (monitores.length === 1) { conditions.push(`pm.monitor_id = $${p++}`); params.push(monitores[0]); }
+  else if (monitores.length > 1) { conditions.push(`pm.monitor_id = ANY($${p++})`); params.push(monitores); }
 
-  if (clientes.length === 1) query = query.eq('cliente_id', clientes[0]);
-  else if (clientes.length > 1) query = query.in('cliente_id', clientes);
+  if (clientes.length === 1) { conditions.push(`pm.cliente_id = $${p++}`); params.push(clientes[0]); }
+  else if (clientes.length > 1) { conditions.push(`pm.cliente_id = ANY($${p++})`); params.push(clientes); }
 
-  if (placa)      query = query.ilike('placa_visitante', `%${placa}%`);
-  if (dataInicio) query = query.gte('data_hora', `${dataInicio}T00:00:00`);
-  if (dataFim)    query = query.lte('data_hora', `${dataFim}T23:59:59`);
+  if (placa)      { conditions.push(`pm.placa_visitante ILIKE $${p++}`); params.push(`%${placa}%`); }
+  if (dataInicio) { conditions.push(`pm.data_hora >= $${p++}`); params.push(`${dataInicio}T00:00:00`); }
+  if (dataFim)    { conditions.push(`pm.data_hora <= $${p++}`); params.push(`${dataFim}T23:59:59`); }
 
-  const { data, error, count } = await query;
+  const where = `WHERE ${conditions.join(' AND ')}`;
 
-  if (error) {
+  const sql = `
+    SELECT
+      pm.id, pm.tipo_movimentacao,
+      pm.condutor_nome, pm.placa_visitante, pm.tipo_veiculo,
+      pm.data_hora, pm.data_hora_fim,
+      pm.km_inicial, pm.km_final,
+      pm.observacoes, pm.created_at,
+      json_build_object('id', u.id, 'nome', u.nome) AS usuarios,
+      json_build_object('id', c.id, 'nome', c.nome) AS clientes,
+      COUNT(*) OVER() AS total_count
+    FROM portaria_movimentacoes pm
+    LEFT JOIN usuarios u ON u.id = pm.monitor_id
+    LEFT JOIN clientes c ON c.id = pm.cliente_id
+    ${where}
+    ORDER BY pm.data_hora DESC
+    LIMIT $${p++} OFFSET $${p++}
+  `;
+  params.push(limite, offset);
+
+  try {
+    const { rows } = await db.query(sql, params);
+    const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+    const dados = rows.map(({ total_count, ...rest }) => rest);
+
+    return res.status(200).json({
+      dados,
+      paginacao: { total, pagina, limite, paginas: Math.ceil(total / limite) }
+    });
+  } catch (error) {
     console.error('❌ [listarCarrosVisitantes]', error.message);
     return res.status(500).json({ erro: error.message });
   }
-
-  return res.status(200).json({
-    dados: data ?? [],
-    paginacao: { total: count ?? 0, pagina, limite, paginas: Math.ceil((count ?? 0) / limite) }
-  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,37 +165,49 @@ async function listarVisitantesPedestres(req, res) {
   const dataFim    = req.query.data_fim    || null;
   const { pagina, limite, offset } = parsePagination(req.query);
 
-  let query = supabase
-    .from('portaria_visitantes')
-    .select(`
-      id, nome, tipo_doc, numero_doc,
-      setor, funcionario, data_hora, created_at,
-      usuarios!monitor_id(id, nome)
-    `, { count: 'exact' })
-    .order('data_hora', { ascending: false })
-    .range(offset, offset + limite - 1);
+  const conditions = [`pv.empresa_id = $1`];
+  const params = [req.user.empresa_id];
+  let p = 2;
 
-  if (monitores.length === 1) query = query.eq('monitor_id', monitores[0]);
-  else if (monitores.length > 1) query = query.in('monitor_id', monitores);
+  if (monitores.length === 1) { conditions.push(`pv.monitor_id = $${p++}`); params.push(monitores[0]); }
+  else if (monitores.length > 1) { conditions.push(`pv.monitor_id = ANY($${p++})`); params.push(monitores); }
 
-  if (tiposDoc.length === 1) query = query.eq('tipo_doc', tiposDoc[0]);
-  else if (tiposDoc.length > 1) query = query.in('tipo_doc', tiposDoc);
+  if (tiposDoc.length === 1) { conditions.push(`pv.tipo_doc = $${p++}`); params.push(tiposDoc[0]); }
+  else if (tiposDoc.length > 1) { conditions.push(`pv.tipo_doc = ANY($${p++})`); params.push(tiposDoc); }
 
-  if (busca)      query = query.ilike('nome', `%${busca}%`);
-  if (dataInicio) query = query.gte('data_hora', `${dataInicio}T00:00:00`);
-  if (dataFim)    query = query.lte('data_hora', `${dataFim}T23:59:59`);
+  if (busca)      { conditions.push(`pv.nome ILIKE $${p++}`); params.push(`%${busca}%`); }
+  if (dataInicio) { conditions.push(`pv.data_hora >= $${p++}`); params.push(`${dataInicio}T00:00:00`); }
+  if (dataFim)    { conditions.push(`pv.data_hora <= $${p++}`); params.push(`${dataFim}T23:59:59`); }
 
-  const { data, error, count } = await query;
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  if (error) {
+  const sql = `
+    SELECT
+      pv.id, pv.nome, pv.tipo_doc, pv.numero_doc,
+      pv.setor, pv.funcionario, pv.data_hora, pv.created_at,
+      json_build_object('id', u.id, 'nome', u.nome) AS usuarios,
+      COUNT(*) OVER() AS total_count
+    FROM portaria_visitantes pv
+    LEFT JOIN usuarios u ON u.id = pv.monitor_id
+    ${where}
+    ORDER BY pv.data_hora DESC
+    LIMIT $${p++} OFFSET $${p++}
+  `;
+  params.push(limite, offset);
+
+  try {
+    const { rows } = await db.query(sql, params);
+    const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+    const dados = rows.map(({ total_count, ...rest }) => rest);
+
+    return res.status(200).json({
+      dados,
+      paginacao: { total, pagina, limite, paginas: Math.ceil(total / limite) }
+    });
+  } catch (error) {
     console.error('❌ [listarVisitantesPedestres]', error.message);
     return res.status(500).json({ erro: error.message });
   }
-
-  return res.status(200).json({
-    dados: data ?? [],
-    paginacao: { total: count ?? 0, pagina, limite, paginas: Math.ceil((count ?? 0) / limite) }
-  });
 }
 
 module.exports = {

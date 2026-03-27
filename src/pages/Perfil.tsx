@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import api from "@/services/api";
 
 export default function Perfil() {
   const { user } = useAuth();
@@ -45,29 +45,18 @@ export default function Perfil() {
 
     setSalvando(true);
     try {
-      // Verifica senha atual via RPC
-      const { data: check, error: checkErr } = await supabase.rpc("auth_login", {
-        p_email: user?.email,
-        p_password: senhaAtual,
+      await api.post('/auth/alterar-senha', {
+        id: user?.id,
+        senhaAtual,
+        novaSenha,
       });
-
-      if (checkErr || check?.error) {
-        toast({ title: "Senha atual incorreta", variant: "destructive" });
-        return;
-      }
-
-      // Atualiza via RPC de alteração (chama criar_usuario reutilizando função de hash)
-      const { error } = await supabase.rpc("alterar_senha", {
-        p_id: parseInt(user?.id || "0"),
-        p_nova_senha: novaSenha,
-      });
-
-      if (error) throw error;
 
       toast({ title: "Senha alterada com sucesso!" });
       setSenhaAtual(""); setNovaSenha(""); setConfirmarSenha("");
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Erro ao alterar senha";
+      const msg =
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (e instanceof Error ? e.message : "Erro ao alterar senha");
       toast({ title: "Erro", description: msg, variant: "destructive" });
     } finally {
       setSalvando(false);

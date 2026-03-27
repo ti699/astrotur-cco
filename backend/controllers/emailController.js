@@ -1,7 +1,7 @@
 'use strict';
 
 const { enviarRelatorio } = require('../services/emailService');
-const { supabase }        = require('../config/supabase');
+const db = require('../config/database');
 
 // Destinatários fixos — sempre recebem o relatório independente do body
 const DESTINATARIOS_FIXOS = [
@@ -38,43 +38,50 @@ async function enviarRelatorioPortaria(req, res) {
   // emailsValidos nunca ficará vazio porque os fixos são sempre válidos
 
   // 2. buscar dados com os filtros recebidos
-  let query = supabase
-    .from('portaria_movimentacoes')
-    .select(`
-      id, tipo_movimento, tipo_movimentacao,
-      data_hora, km_entrada, destino, local_saida,
-      veiculos(id, placa, numero_frota),
-      motoristas(id, nome),
-      usuarios!monitor_id(id, nome),
-      clientes(id, nome)
-    `)
-    .eq('tipo_movimentacao', 'FROTA')
-    .order('data_hora', { ascending: false })
-    .limit(500); // limite de segurança — PDF não fica enorme
+  const conditions = [`pm.empresa_id = $1`, `pm.tipo_movimentacao = 'FROTA'`];
+  const params = [req.user.empresa_id];
+  let p = 2;
 
   if (filtros?.tipo_movimento?.length) {
-    query = filtros.tipo_movimento.length === 1
-      ? query.eq('tipo_movimento', filtros.tipo_movimento[0])
-      : query.in('tipo_movimento', filtros.tipo_movimento);
+    if (filtros.tipo_movimento.length === 1) { conditions.push(`pm.tipo_movimento = $${p++}`); params.push(filtros.tipo_movimento[0]); }
+    else { conditions.push(`pm.tipo_movimento = ANY($${p++})`); params.push(filtros.tipo_movimento); }
   }
   if (filtros?.cliente_id?.length) {
-    query = filtros.cliente_id.length === 1
-      ? query.eq('cliente_id', filtros.cliente_id[0])
-      : query.in('cliente_id', filtros.cliente_id);
+    if (filtros.cliente_id.length === 1) { conditions.push(`pm.cliente_id = $${p++}`); params.push(filtros.cliente_id[0]); }
+    else { conditions.push(`pm.cliente_id = ANY($${p++})`); params.push(filtros.cliente_id); }
   }
   if (filtros?.monitor_id?.length) {
-    query = filtros.monitor_id.length === 1
-      ? query.eq('monitor_id', filtros.monitor_id[0])
-      : query.in('monitor_id', filtros.monitor_id);
+    if (filtros.monitor_id.length === 1) { conditions.push(`pm.monitor_id = $${p++}`); params.push(filtros.monitor_id[0]); }
+    else { conditions.push(`pm.monitor_id = ANY($${p++})`); params.push(filtros.monitor_id); }
   }
-  if (filtros?.data_inicio) query = query.gte('data_hora', `${filtros.data_inicio}T00:00:00`);
-  if (filtros?.data_fim)    query = query.lte('data_hora', `${filtros.data_fim}T23:59:59`);
+  if (filtros?.data_inicio) { conditions.push(`pm.data_hora >= $${p++}`); params.push(`${filtros.data_inicio}T00:00:00`); }
+  if (filtros?.data_fim)    { conditions.push(`pm.data_hora <= $${p++}`); params.push(`${filtros.data_fim}T23:59:59`); }
 
-  const { data, error } = await query;
+  const where = `WHERE ${conditions.join(' AND ')}`;
 
-  if (error) {
-    console.error('❌ [emailController] Erro ao buscar dados:', error.message);
-    return res.status(500).json({ erro: error.message });
+  let data;
+  try {
+    const result = await db.query(`
+      SELECT
+        pm.id, pm.tipo_movimento, pm.tipo_movimentacao,
+        pm.data_hora, pm.km_entrada, pm.destino, pm.local_saida,
+        json_build_object('id', v.id, 'placa', v.placa, 'numero_frota', v.numero_frota) AS veiculos,
+        json_build_object('id', m.id, 'nome', m.nome) AS motoristas,
+        json_build_object('id', u.id, 'nome', u.nome) AS usuarios,
+        json_build_object('id', c.id, 'nome', c.nome) AS clientes
+      FROM portaria_movimentacoes pm
+      LEFT JOIN veiculos   v ON v.id = pm.veiculo_id
+      LEFT JOIN motoristas m ON m.id = pm.motorista_id
+      LEFT JOIN usuarios   u ON u.id = pm.monitor_id
+      LEFT JOIN clientes   c ON c.id = pm.cliente_id
+      ${where}
+      ORDER BY pm.data_hora DESC
+      LIMIT 500
+    `, params);
+    data = result.rows;
+  } catch (err) {
+    console.error('❌ [emailController] Erro ao buscar dados:', err.message);
+    return res.status(500).json({ erro: err.message });
   }
 
   // 3. enviar e-mail com PDF

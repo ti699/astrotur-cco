@@ -7,6 +7,7 @@ const db = require('../config/database');
 const { enviarRelatorioPlan } = require('../config/email');
 const { criarOcorrencia, listarOcorrencias, atualizarAndamento, uploadFoto, gerarOsPdf } = require('../controllers/ocorrenciaController');
 const uploadMemory = require('../middlewares/upload');
+const { authenticateToken } = require('../middlewares/auth');
 
 // Mock de dados em memória
 let ocorrenciasMemory = [];
@@ -134,11 +135,11 @@ const upload = multer({
   }
 });
 
-// GET / — Listar ocorrências com filtros combinados e paginação
-router.get('/', listarOcorrencias);
+// GET / — Listar ocorrencias com filtros combinados e paginacao
+router.get('/', authenticateToken, listarOcorrencias);
 
-// Buscar ocorrência por ID
-router.get('/:id', async (req, res) => {
+// Buscar ocorrencia por ID
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     let ocorrencia;
@@ -170,8 +171,8 @@ router.get('/:id', async (req, res) => {
         LEFT JOIN tipos_quebra tq ON o.tipo_quebra_id = tq.id
         LEFT JOIN usuarios u ON o.criado_por = u.id
         LEFT JOIN usuarios u_aprov ON o.aprovado_por = u_aprov.id
-        WHERE o.id = $1::integer OR o.numero = $1::text
-      `, [id]);
+        WHERE o.id = $1::integer AND o.empresa_id = $2
+      `, [id, req.user.empresa_id]);
 
       console.log('📊 Resultado da busca:', result.rows.length, 'registros');
       
@@ -235,14 +236,11 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Criar nova ocorrência — via Supabase com validação (controller)
-router.post('/', criarOcorrencia);
+// Criar nova ocorrencia
+router.post('/', authenticateToken, criarOcorrencia);
 
-// LEGADO REMOVIDO — campos extras agora têm colunas dedicadas na tabela.
-// Ver migration: add_ocorrencias_socorro_fields.sql.
-
-// Atualizar ocorrência
-router.put('/:id', async (req, res) => {
+// Atualizar ocorrencia
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, descricao, ...outrosDados } = req.body;
@@ -256,9 +254,9 @@ router.put('/:id', async (req, res) => {
         SET status = $1, 
             descricao = COALESCE($2, descricao),
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $3::integer OR numero = $3::text
+        WHERE id = $3::integer AND empresa_id = $4
         RETURNING *
-      `, [status || 'pendente', descricao, id]);
+      `, [status || 'pendente', descricao, id, req.user.empresa_id]);
 
       if (result.rows.length === 0) {
         console.log('❌ Nenhuma ocorrência encontrada para atualizar');
@@ -300,8 +298,8 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Aprovar ocorrência
-router.post('/:id/aprovar', async (req, res) => {
+// Aprovar ocorrencia
+router.post('/:id/aprovar', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { usuario_id } = req.body;
@@ -326,8 +324,8 @@ router.post('/:id/aprovar', async (req, res) => {
   }
 });
 
-// Finalizar plantão e gerar relatório
-router.post('/finalizar-plantao', async (req, res) => {
+// Finalizar plantao e gerar relatorio
+router.post('/finalizar-plantao', authenticateToken, async (req, res) => {
   try {
     const { usuario_id, observacoes } = req.body;
     const hoje = new Date();
@@ -421,7 +419,7 @@ router.post('/finalizar-plantao', async (req, res) => {
 });
 
 // Rota para download de anexos
-router.get('/anexo/:ocorrenciaId/:anexoId', async (req, res) => {
+router.get('/anexo/:ocorrenciaId/:anexoId', authenticateToken, async (req, res) => {
   try {
     const { ocorrenciaId, anexoId } = req.params;
     
@@ -469,7 +467,7 @@ router.get('/anexo/:ocorrenciaId/:anexoId', async (req, res) => {
 });
 
 // Rota para visualizar anexo (inline, sem download)
-router.get('/anexo/:ocorrenciaId/:anexoId/view', async (req, res) => {
+router.get('/anexo/:ocorrenciaId/:anexoId/view', authenticateToken, async (req, res) => {
   try {
     const { ocorrenciaId, anexoId } = req.params;
     
@@ -515,13 +513,13 @@ router.getOcorrenciasMemory = function() {
   return ocorrenciasMemory;
 };
 
-// PATCH /api/ocorrencias/:id/andamento — Alterar status da ocorrência
-router.patch('/:id/andamento', atualizarAndamento);
+// PATCH /api/ocorrencias/:id/andamento
+router.patch('/:id/andamento', authenticateToken, atualizarAndamento);
 
-// POST /api/ocorrencias/:id/foto — Upload de foto para o Supabase Storage
-router.post('/:id/foto', uploadMemory.single('foto'), uploadFoto);
+// POST /api/ocorrencias/:id/foto
+router.post('/:id/foto', authenticateToken, uploadMemory.single('foto'), uploadFoto);
 
-// GET /api/ocorrencias/:id/os-pdf — Gerar PDF da O.S. de Socorro
-router.get('/:id/os-pdf', gerarOsPdf);
+// GET /api/ocorrencias/:id/os-pdf
+router.get('/:id/os-pdf', authenticateToken, gerarOsPdf);
 
 module.exports = router;

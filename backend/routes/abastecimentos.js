@@ -1,9 +1,10 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
+const { authenticateToken } = require('../middlewares/auth');
 
-// GET /api/abastecimentos - Listar todos com join de veículo e portaria
-router.get('/', async (req, res) => {
+// GET /api/abastecimentos - Listar da empresa (tenant isolado)
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(`
       SELECT a.*,
@@ -14,8 +15,9 @@ router.get('/', async (req, res) => {
       FROM abastecimentos a
       LEFT JOIN veiculos v ON v.id = a.veiculo_id
       LEFT JOIN portaria_movimentacoes pm ON pm.id = a.portaria_movimentacao_id
+      WHERE a.empresa_id = $1
       ORDER BY a.created_at DESC
-    `);
+    `, [req.user.empresa_id]);
     res.json(result.rows);
   } catch (error) {
     console.error('Erro ao listar abastecimentos:', error);
@@ -23,8 +25,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/abastecimentos/:id - Buscar por ID
-router.get('/:id', async (req, res) => {
+// GET /api/abastecimentos/:id - Buscar por ID (tenant isolado)
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await db.query(`
@@ -36,10 +38,10 @@ router.get('/:id', async (req, res) => {
       FROM abastecimentos a
       LEFT JOIN veiculos v ON v.id = a.veiculo_id
       LEFT JOIN portaria_movimentacoes pm ON pm.id = a.portaria_movimentacao_id
-      WHERE a.id = $1
-    `, [id]);
+      WHERE a.id = $1 AND a.empresa_id = $2
+    `, [id, req.user.empresa_id]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Abastecimento não encontrado' });
+      return res.status(404).json({ message: 'Abastecimento nao encontrado' });
     }
     res.json(result.rows[0]);
   } catch (error) {
@@ -48,21 +50,20 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/abastecimentos - Criar registro de abastecimento/lavagem
-// Body: { veiculo_id, portaria_movimentacao_id? }
-router.post('/', async (req, res) => {
+// POST /api/abastecimentos - Criar registro (tenant isolado)
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const { veiculo_id, portaria_movimentacao_id } = req.body;
 
     if (!veiculo_id) {
-      return res.status(400).json({ message: 'veiculo_id é obrigatório' });
+      return res.status(400).json({ message: 'veiculo_id e obrigatorio' });
     }
 
     const result = await db.query(
-      `INSERT INTO abastecimentos (veiculo_id, portaria_movimentacao_id)
-       VALUES ($1, $2)
+      `INSERT INTO abastecimentos (veiculo_id, portaria_movimentacao_id, empresa_id)
+       VALUES ($1, $2, $3)
        RETURNING *`,
-      [veiculo_id, portaria_movimentacao_id || null]
+      [veiculo_id, portaria_movimentacao_id || null, req.user.empresa_id]
     );
 
     res.status(201).json(result.rows[0]);
@@ -72,9 +73,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/abastecimentos/:id - Atualizar status de abastecimento/lavagem
-// Body: { status_abastecimento?, status_lavagem?, concluido? }
-router.patch('/:id', async (req, res) => {
+// PATCH /api/abastecimentos/:id - Atualizar status (tenant isolado)
+router.patch('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { status_abastecimento, status_lavagem, concluido } = req.body;
@@ -88,20 +88,19 @@ router.patch('/:id', async (req, res) => {
     let p = 1;
 
     if (status_abastecimento !== undefined) { updates.push(`status_abastecimento = $${p++}`); values.push(status_abastecimento); }
-    if (status_lavagem !== undefined) { updates.push(`status_lavagem = $${p++}`); values.push(status_lavagem); }
-    if (concluido !== undefined) { updates.push(`concluido = $${p++}`); values.push(concluido); }
+    if (status_lavagem       !== undefined) { updates.push(`status_lavagem = $${p++}`);       values.push(status_lavagem); }
+    if (concluido            !== undefined) { updates.push(`concluido = $${p++}`);              values.push(concluido); }
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(id);
+    values.push(id, req.user.empresa_id);
 
     const result = await db.query(
-      `UPDATE abastecimentos SET ${updates.join(', ')} WHERE id = $${p} RETURNING *`,
+      `UPDATE abastecimentos SET ${updates.join(', ')} WHERE id = $${p++} AND empresa_id = $${p} RETURNING *`,
       values
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Abastecimento não encontrado' });
+      return res.status(404).json({ message: 'Abastecimento nao encontrado' });
     }
-
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao atualizar abastecimento:', error);
@@ -109,130 +108,18 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/abastecimentos/:id - Excluir
-router.delete('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await db.query('DELETE FROM abastecimentos WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Abastecimento não encontrado' });
-    }
-    res.json({ message: 'Abastecimento excluído' });
-  } catch (error) {
-    console.error('Erro ao deletar abastecimento:', error);
-    res.status(500).json({ message: 'Erro ao deletar abastecimento' });
-  }
-});
-
-module.exports = router;
-
-// Obter abastecimento por ID
-router.get('/:id', async (req, res) => {
+// DELETE /api/abastecimentos/:id - Excluir (tenant isolado)
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await db.query(
-      `SELECT id, veiculo_id, motorista, data, litros, tipo_combustivel, km_atual, posto, valor, retornou, created_at, updated_at
-       FROM abastecimentos
-       WHERE id = $1`,
-      [id]
+      'DELETE FROM abastecimentos WHERE id = $1 AND empresa_id = $2 RETURNING id',
+      [id, req.user.empresa_id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Abastecimento não encontrado' });
+      return res.status(404).json({ message: 'Abastecimento nao encontrado' });
     }
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Erro ao obter abastecimento:', error);
-    res.status(500).json({ message: 'Erro ao obter abastecimento' });
-  }
-});
-
-// Criar novo abastecimento
-router.post('/', async (req, res) => {
-  try {
-    const { veiculo_id, motorista, litros, tipo_combustivel, km_atual, posto, valor } = req.body;
-
-    if (!veiculo_id || !litros || !km_atual) {
-      return res.status(400).json({ message: 'Campos obrigatórios ausentes' });
-    }
-
-    const result = await db.query(
-      `INSERT INTO abastecimentos (veiculo_id, motorista, data, litros, tipo_combustivel, km_atual, posto, valor, retornou)
-       VALUES ($1, $2, CURRENT_DATE, $3, $4, $5, $6, $7, false)
-       RETURNING id, veiculo_id, motorista, data, litros, tipo_combustivel, km_atual, posto, valor, retornou, created_at, updated_at`,
-      [veiculo_id, motorista || null, litros, tipo_combustivel || 'Diesel S10', km_atual, posto || null, valor || 0]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Erro ao criar abastecimento:', error);
-    res.status(500).json({ message: 'Erro ao criar abastecimento' });
-  }
-});
-
-// Atualizar abastecimento (PATCH para status/retorno)
-router.patch('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { retornou, valor, litros } = req.body;
-
-    if (retornou === undefined && valor === undefined && litros === undefined) {
-      return res.status(400).json({ message: 'Nenhum campo para atualizar' });
-    }
-
-    const updates = [];
-    const values = [];
-    let paramCount = 1;
-
-    if (retornou !== undefined) {
-      updates.push(`retornou = $${paramCount}`);
-      values.push(retornou);
-      paramCount++;
-    }
-
-    if (valor !== undefined) {
-      updates.push(`valor = $${paramCount}`);
-      values.push(valor);
-      paramCount++;
-    }
-
-    if (litros !== undefined) {
-      updates.push(`litros = $${paramCount}`);
-      values.push(litros);
-      paramCount++;
-    }
-
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(id);
-
-    const query = `
-      UPDATE abastecimentos 
-      SET ${updates.join(', ')}
-      WHERE id = $${paramCount}
-      RETURNING id, veiculo_id, motorista, data, litros, tipo_combustivel, km_atual, posto, valor, retornou, created_at, updated_at
-    `;
-
-    const result = await db.query(query, values);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Abastecimento não encontrado' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Erro ao atualizar abastecimento:', error);
-    res.status(500).json({ message: 'Erro ao atualizar abastecimento' });
-  }
-});
-
-// Deletar abastecimento
-router.delete('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await db.query('DELETE FROM abastecimentos WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Abastecimento não encontrado' });
-    }
-    res.json({ message: 'Abastecimento deletado' });
+    res.json({ message: 'Abastecimento excluido' });
   } catch (error) {
     console.error('Erro ao deletar abastecimento:', error);
     res.status(500).json({ message: 'Erro ao deletar abastecimento' });

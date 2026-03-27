@@ -1,6 +1,6 @@
 'use strict';
 
-const { supabase } = require('../config/supabase');
+const db = require('../config/database');
 const { validarCarroVisitante } = require('../validators/carroVisitanteValidator');
 
 /**
@@ -54,31 +54,49 @@ async function registrarCarroVisitante(req, res) {
   };
 
   // 3. Inserir no banco
-  const { data, error } = await supabase
-    .from('portaria_movimentacoes')
-    .insert(registro)
-    .select(`
-      id,
-      tipo_movimentacao,
-      condutor_nome,
-      placa_visitante,
-      tipo_veiculo,
-      data_hora,
-      data_hora_fim,
-      km_inicial,
-      km_final,
-      observacoes,
-      created_at,
-      usuarios!monitor_id ( id, nome )
-    `)
-    .single();
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO portaria_movimentacoes
+        (tipo_movimento, tipo_movimentacao, condutor_nome, placa_visitante, tipo_veiculo,
+         observacoes, data_hora, data_hora_fim, monitor_id, cliente_id, veiculo_id,
+         km_inicial, km_final, empresa_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       RETURNING
+         id, tipo_movimentacao, condutor_nome, placa_visitante, tipo_veiculo,
+         data_hora, data_hora_fim, km_inicial, km_final, observacoes, created_at,
+         monitor_id`,
+      [
+        registro.tipo_movimento,
+        registro.tipo_movimentacao,
+        registro.condutor_nome,
+        registro.placa_visitante,
+        registro.tipo_veiculo,
+        registro.observacoes,
+        registro.data_hora,
+        registro.data_hora_fim,
+        registro.monitor_id,
+        registro.cliente_id,
+        registro.veiculo_id,
+        registro.km_inicial,
+        registro.km_final,
+        req.user.empresa_id,
+      ]
+    );
 
-  if (error) {
+    const row = rows[0];
+
+    // Buscar nome do monitor para retornar estrutura compatível com o frontend
+    const monitorResult = await db.query(
+      'SELECT id, nome FROM usuarios WHERE id = $1',
+      [row.monitor_id]
+    );
+    row.usuarios = monitorResult.rows[0] ?? null;
+
+    return res.status(201).json(row);
+  } catch (error) {
     console.error('[carroVisitante] Erro ao inserir:', error.message);
     return res.status(500).json({ erro: error.message });
   }
-
-  return res.status(201).json(data);
 }
 
 module.exports = { registrarCarroVisitante };

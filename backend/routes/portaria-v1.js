@@ -9,10 +9,11 @@
 
 const express = require('express');
 const router = express.Router();
+const { authenticateToken } = require('../middlewares/auth');
 
 const { criarSaida } = require('../controllers/portariaSaidaController');
 
-// POST /api/v1/portaria/saida — Registrar saída de veículo vinculada a uma entrada
-router.post('/saida', criarSaida);
+// POST /api/v1/portaria/saida
+router.post('/saida', authenticateToken, criarSaida);
 
 module.exports = router;

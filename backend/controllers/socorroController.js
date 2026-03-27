@@ -5,13 +5,15 @@
  * Fluxo:
  *   1. Valida body
  *   2. Gera código ASTRO.TRF.XXX-D
- *   3. Persiste no Supabase (tabela chamados_socorro)
+ *   3. Persiste no PostgreSQL (tabela chamados_socorro)
  *   4. Retorna 201 com o registro completo
+ *
+ * Migrado de Supabase → pg Pool nativo em 2026-03-23
  */
 
 'use strict';
 
-const { supabase }          = require('../config/supabase');
+const db                     = require('../config/database');
 const { validarSocorro }    = require('../validators/socorroValidator');
 const { gerarCodigoSocorro } = require('../services/codigoSocorroService');
 
@@ -46,39 +48,32 @@ async function criarSocorro(req, res) {
 
     const codigoSocorro = await gerarCodigoSocorro();
 
-    // ── 3. Persistir no Supabase ────────────────────────────────────────────
-    const { data, error } = await supabase
-      .from('chamados_socorro')
-      .insert({
-        codigo_socorro: codigoSocorro,
-        titulo:         String(titulo).trim(),
-        descricao:      String(descricao).trim(),
-        solicitante:    String(solicitante).trim(),
-        setor:          String(setor).trim(),
-        prioridade:     prioridadeNorm,
-        categoria:      categoria ? String(categoria).trim() : null,
-        anexos:         Array.isArray(anexos) ? anexos : [],
-        status:         'ABERTO',
-        data_criacao:   new Date().toISOString(),
-      })
-      .select(`
-        id,
-        codigo_socorro,
-        titulo,
-        descricao,
-        solicitante,
-        setor,
-        prioridade,
-        categoria,
-        anexos,
-        status,
-        data_criacao
-      `)
-      .single();
+    // ── 3. Persistir no PostgreSQL ──────────────────────────────────────────
+    const { rows } = await db.query(
+      `INSERT INTO chamados_socorro
+        (codigo_socorro, titulo, descricao, solicitante, setor, prioridade, categoria, anexos, status, data_criacao, empresa_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ABERTO', $9, $10)
+       RETURNING
+         id, codigo_socorro, titulo, descricao, solicitante, setor,
+         prioridade, categoria, anexos, status, data_criacao`,
+      [
+        codigoSocorro,
+        String(titulo).trim(),
+        String(descricao).trim(),
+        String(solicitante).trim(),
+        String(setor).trim(),
+        prioridadeNorm,
+        categoria ? String(categoria).trim() : null,
+        JSON.stringify(Array.isArray(anexos) ? anexos : []),
+        new Date().toISOString(),
+        req.user.empresa_id,
+      ]
+    );
 
-    if (error) {
-      console.error('❌ Supabase erro ao criar chamado de socorro:', error);
-      return res.status(500).json({ erro: error.message });
+    const data = rows[0];
+
+    if (!data) {
+      return res.status(500).json({ erro: 'Falha ao persistir chamado de socorro' });
     }
 
     console.log(`✅ Chamado de socorro criado: ${data.codigo_socorro}`);

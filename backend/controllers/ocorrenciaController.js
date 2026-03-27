@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const db = require('../config/database');
 const { validarOcorrencia } = require('../validators/ocorrenciaValidator');
 const { gerarCodigoSocorro } = require('../services/codigoSocorroService');
 const { gerarHtmlOS } = require('../templates/osSocorro');
@@ -44,12 +44,11 @@ function gerarNumeroOcorrencia() {
 // ─── Mapear socorro_natureza_defeito → tipo_quebra_id ──────────────────────
 async function resolverTipoQuebraId(natureza) {
   if (!natureza) return null;
-  const { data } = await supabase
-    .from('tipos_quebra')
-    .select('id')
-    .ilike('nome', natureza)
-    .limit(1);
-  return data && data[0] ? data[0].id : null;
+  const { rows } = await db.query(
+    `SELECT id FROM tipos_quebra WHERE nome ILIKE $1 LIMIT 1`,
+    [natureza]
+  );
+  return rows[0]?.id ?? null;
 }
 
 // ─── Controller principal ──────────────────────────────────────────────────
@@ -137,21 +136,25 @@ async function criarOcorrencia(req, res) {
       socorro_carro_reserva: tipo_ocorrencia === 'Socorro' ? socorro_carro_reserva : null,
       socorro_tipo_atendimento: tipo_ocorrencia === 'Socorro' ? socorro_tipo_atendimento : null,
       socorro_foto_url: socorro_foto_url || null,
+      empresa_id: req.user.empresa_id,
     };
 
-    // 5. Inserir no Supabase
-    const { data, error } = await supabase
-      .from('ocorrencias')
-      .insert(dadosInsert)
-      .select('id, numero, tipo_ocorrencia, status')
-      .single();
+    // 5. Inserir no PostgreSQL
+    const cols = Object.keys(dadosInsert);
+    const vals = Object.values(dadosInsert);
+    const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
 
-    if (error) {
-      console.error('❌ Erro Supabase ao criar ocorrência:', error);
-      return res.status(500).json({ erro: error.message });
-    }
+    const { rows } = await db.query(
+      `INSERT INTO ocorrencias (${cols.join(', ')})
+       VALUES (${placeholders})
+       RETURNING id, numero, tipo_ocorrencia, status`,
+      vals
+    );
 
-    console.log(`✅ Ocorrência ${data.numero} criada com sucesso via Supabase`);
+    const data = rows[0];
+    if (!data) throw new Error('Falha ao inserir ocorrência');
+
+    console.log(`✅ Ocorrência ${data.numero} criada com sucesso`);
 
     // 6. Resposta 201
     return res.status(201).json({
@@ -188,24 +191,17 @@ async function atualizarAndamento(req, res) {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('ocorrencias')
-      .update({ status })
-      .eq('id', id)
-      .select('id, status')
-      .single();
+    const { rows } = await db.query(
+      `UPDATE ocorrencias SET status = $1 WHERE id = $2 AND empresa_id = $3 RETURNING id, status`,
+      [status, id, req.user.empresa_id]
+    );
 
-    if (error) {
-      // PGRST116 → nenhuma linha encontrada
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ erro: `Ocorrência ${id} não encontrada.` });
-      }
-      console.error('❌ Erro Supabase ao atualizar andamento:', error);
-      return res.status(500).json({ erro: error.message });
+    if (rows.length === 0) {
+      return res.status(404).json({ erro: `Ocorrencia ${id} nao encontrada.` });
     }
 
+    const data = rows[0];
     console.log(`✅ Ocorrência ${id} — status atualizado para "${data.status}"`);
-
     return res.status(200).json({ id: data.id, status: data.status });
   } catch (err) {
     console.error('❌ Erro inesperado em atualizarAndamento:', err);
@@ -232,58 +228,36 @@ async function uploadFoto(req, res) {
   }
 
   // 2. Ocorrência existe?
-  const { data: existente, error: erroGet } = await supabase
-    .from('ocorrencias')
-    .select('id')
-    .eq('id', id)
-    .single();
-
-  if (erroGet || !existente) {
-    return res.status(404).json({ erro: 'Ocorrência não encontrada' });
+  const existsResult = await db.query(`SELECT id FROM ocorrencias WHERE id = $1 AND empresa_id = $2`, [id, req.user.empresa_id]);
+  if (existsResult.rows.length === 0) {
+    return res.status(404).json({ erro: 'Ocorrencia nao encontrada' });
   }
 
   // 3. Nome único para o arquivo
   const extensao = req.file.mimetype === 'image/png' ? 'png' : 'jpg';
   const nomeArquivo = `${id}_${Date.now()}.${extensao}`;
-  const caminho = `fotos/${nomeArquivo}`;
+  const uploadsDir = path.join(__dirname, '../uploads/fotos');
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  const caminhoLocal = path.join(uploadsDir, nomeArquivo);
 
-  // 4. Upload para Supabase Storage
-  const { error: erroUpload } = await supabase
-    .storage
-    .from('ocorrencias-fotos')
-    .upload(caminho, req.file.buffer, {
-      contentType: req.file.mimetype,
-      upsert: true,
-    });
+  // 4. Salvar arquivo localmente (VPS)
+  fs.writeFileSync(caminhoLocal, req.file.buffer);
 
-  if (erroUpload) {
-    console.error('❌ Erro Supabase Storage:', erroUpload);
-    return res.status(500).json({ erro: erroUpload.message });
-  }
+  // URL relativa acessível via Nginx (configure static files em /api/uploads)
+  const urlPublica = `/uploads/fotos/${nomeArquivo}`;
 
-  // 5. URL pública
-  const { data: urlData } = supabase
-    .storage
-    .from('ocorrencias-fotos')
-    .getPublicUrl(caminho);
+  // 5. Persistir URL na ocorrência
+  const { rows: updRows } = await db.query(
+    `UPDATE ocorrencias SET socorro_foto_url = $1 WHERE id = $2 AND empresa_id = $3 RETURNING id, socorro_foto_url`,
+    [urlPublica, id, req.user.empresa_id]
+  );
 
-  const urlPublica = urlData.publicUrl;
-
-  // 6. Persistir URL na ocorrência
-  const { data, error: erroUpdate } = await supabase
-    .from('ocorrencias')
-    .update({ socorro_foto_url: urlPublica })
-    .eq('id', id)
-    .select('id, socorro_foto_url')
-    .single();
-
-  if (erroUpdate) {
-    console.error('❌ Erro Supabase ao salvar URL:', erroUpdate);
-    return res.status(500).json({ erro: erroUpdate.message });
+  if (updRows.length === 0) {
+    return res.status(500).json({ erro: 'Erro ao salvar URL da foto' });
   }
 
   console.log(`✅ Foto da ocorrência ${id} salva: ${urlPublica}`);
-  return res.status(200).json(data);
+  return res.status(200).json(updRows[0]);
 }
 
 // ─── Gerar PDF da OS de Socorro ──────────────────────────────────────────────
@@ -292,19 +266,22 @@ async function gerarOsPdf(req, res) {
   if (isNaN(id)) return res.status(400).json({ erro: 'ID inválido.' });
 
   // 1. Buscar ocorrência com relacionamentos
-  const { data: ocorrencia, error } = await supabase
-    .from('ocorrencias')
-    .select(`
-      *,
-      clientes!cliente_id ( nome ),
-      usuarios!monitor_id ( nome )
-    `)
-    .eq('id', id)
-    .single();
+  const { rows: occRows } = await db.query(`
+    SELECT
+      o.*,
+      json_build_object('nome', c.nome) AS clientes,
+      json_build_object('nome', u.nome) AS usuarios
+    FROM ocorrencias o
+    LEFT JOIN clientes c ON c.id = o.cliente_id
+    LEFT JOIN usuarios u ON u.id = o.monitor_id
+    WHERE o.id = $1 AND o.empresa_id = $2
+  `, [id, req.user.empresa_id]);
 
-  if (error || !ocorrencia) {
+  if (occRows.length === 0) {
     return res.status(404).json({ erro: 'Ocorrência não encontrada.' });
   }
+
+  const ocorrencia = occRows[0];
 
   if (ocorrencia.tipo_ocorrencia !== 'Socorro') {
     return res.status(422).json({
@@ -356,68 +333,66 @@ async function listarOcorrencias(req, res) {
 
   const { pagina, limite, offset } = parsePagination(req.query);
 
-  let query = supabase
-    .from('ocorrencias')
-    .select(`
-      id,
-      numero,
-      status,
-      tipo_ocorrencia,
-      descricao,
-      veiculo_previsto,
-      data_chamado,
-      data_conclusao,
-      houve_atraso,
-      atraso_minutos,
-      socorro_rota,
-      created_at,
-      clientes!cliente_id ( id, nome ),
-      usuarios!monitor_id ( id, nome )
-    `, { count: 'exact' })
-    .order('data_chamado', { ascending: false })
-    .range(offset, offset + limite - 1);
+  const conditions = [`o.empresa_id = $1`];
+  const params = [req.user.empresa_id];
+  let p = 2;
 
-  if (status.length === 1)       query = query.eq('status', status[0]);
-  else if (status.length > 1)   query = query.in('status', status);
+  if (status.length === 1)       { conditions.push(`o.status = $${p++}`); params.push(status[0]); }
+  else if (status.length > 1)    { conditions.push(`o.status = ANY($${p++})`); params.push(status); }
 
-  if (tipos.length === 1)        query = query.eq('tipo_ocorrencia', tipos[0]);
-  else if (tipos.length > 1)    query = query.in('tipo_ocorrencia', tipos);
+  if (tipos.length === 1)        { conditions.push(`o.tipo_ocorrencia = $${p++}`); params.push(tipos[0]); }
+  else if (tipos.length > 1)     { conditions.push(`o.tipo_ocorrencia = ANY($${p++})`); params.push(tipos); }
 
-  if (clientes.length === 1)     query = query.eq('cliente_id', clientes[0]);
-  else if (clientes.length > 1) query = query.in('cliente_id', clientes);
+  if (clientes.length === 1)     { conditions.push(`o.cliente_id = $${p++}`); params.push(clientes[0]); }
+  else if (clientes.length > 1)  { conditions.push(`o.cliente_id = ANY($${p++})`); params.push(clientes); }
 
-  if (monitores.length === 1)    query = query.eq('monitor_id', monitores[0]);
-  else if (monitores.length > 1) query = query.in('monitor_id', monitores);
+  if (monitores.length === 1)    { conditions.push(`o.monitor_id = $${p++}`); params.push(monitores[0]); }
+  else if (monitores.length > 1) { conditions.push(`o.monitor_id = ANY($${p++})`); params.push(monitores); }
 
-  if (dataInicio) query = query.gte('data_chamado', `${dataInicio}T00:00:00`);
-  if (dataFim)    query = query.lte('data_chamado', `${dataFim}T23:59:59`);
-  if (busca)      query = query.ilike('descricao', `%${busca}%`);
+  if (dataInicio) { conditions.push(`o.data_chamado >= $${p++}`); params.push(`${dataInicio}T00:00:00`); }
+  if (dataFim)    { conditions.push(`o.data_chamado <= $${p++}`); params.push(`${dataFim}T23:59:59`); }
+  if (busca)      { conditions.push(`o.descricao ILIKE $${p++}`); params.push(`%${busca}%`); }
 
-  const { data, error, count } = await query;
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  if (error) {
-    console.error('❌ Erro ao listar ocorrências:', error);
-    return res.status(500).json({ erro: error.message });
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        o.id, o.numero, o.status, o.tipo_ocorrencia,
+        o.descricao, o.veiculo_previsto, o.data_chamado,
+        o.data_conclusao, o.houve_atraso, o.atraso_minutos,
+        o.socorro_rota, o.created_at,
+        json_build_object('id', c.id, 'nome', c.nome) AS clientes,
+        json_build_object('id', u.id, 'nome', u.nome) AS usuarios,
+        COUNT(*) OVER() AS total_count
+      FROM ocorrencias o
+      LEFT JOIN clientes c ON c.id = o.cliente_id
+      LEFT JOIN usuarios u ON u.id = o.monitor_id
+      ${where}
+      ORDER BY o.data_chamado DESC
+      LIMIT $${p++} OFFSET $${p++}
+    `, [...params, limite, offset]);
+
+    const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+    const dados = rows.map(({ total_count, ...rest }) => rest);
+
+    return res.status(200).json({
+      dados,
+      paginacao: { total, pagina, limite, paginas: Math.ceil(total / limite) },
+      filtros_aplicados: {
+        status:      status.length   ? status      : null,
+        tipos:       tipos.length    ? tipos       : null,
+        clientes:    clientes.length ? clientes    : null,
+        monitores:   monitores.length? monitores   : null,
+        data_inicio: dataInicio      ? dataInicio  : null,
+        data_fim:    dataFim         ? dataFim     : null,
+        busca:       busca           ? busca       : null
+      }
+    });
+  } catch (err) {
+    console.error('❌ Erro ao listar ocorrências:', err);
+    return res.status(500).json({ erro: err.message });
   }
-
-  return res.status(200).json({
-    dados: data ?? [],
-    paginacao: {
-      total:   count ?? 0,
-      pagina,
-      limite,
-      paginas: Math.ceil((count ?? 0) / limite)
-    },
-    filtros_aplicados: {
-      status:      status.length      ? status      : null,
-      tipos:       tipos.length       ? tipos       : null,
-      clientes:    clientes.length    ? clientes    : null,
-      monitores:   monitores.length   ? monitores   : null,
-      data_inicio: dataInicio         ? dataInicio  : null,
-      data_fim:    dataFim            ? dataFim     : null,
-      busca:       busca              ? busca       : null
-    }
-  });
 }
 
 module.exports = { criarOcorrencia, listarOcorrencias, atualizarAndamento, uploadFoto, gerarOsPdf };
